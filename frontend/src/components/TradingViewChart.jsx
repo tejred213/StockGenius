@@ -66,7 +66,7 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
           if (symbol.startsWith('BSE:')) fetchSymbol = symbol.replace('BSE:', '') + '.BO';
         }
 
-        const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+        const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
         const response = await axios.get(`${API_URL}/api/stocks/chart/${fetchSymbol}`);
         const formattedData = response.data.map(d => ({
           time: d.time,

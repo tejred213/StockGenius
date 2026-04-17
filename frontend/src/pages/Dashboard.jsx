@@ -65,7 +65,7 @@ export default function Dashboard() {
       
       intervalId = setInterval(async () => {
         try {
-          const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+          const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
           const res = await axios.get(`${API_URL}/api/stocks/price/${data.ticker}`);
           const newPrice = res.data;
           
@@ -93,7 +93,7 @@ export default function Dashboard() {
     setData(null);
 
     try {
-      const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+      const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
       const response = await axios.get(`${API_URL}/api/stocks/evaluate/${ticker}`);
       setData(response.data);
     } catch (err) {
