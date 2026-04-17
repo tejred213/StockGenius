@@ -7,15 +7,6 @@ from ml_engine import StockMLEngine
 from nifty50 import compare_nifty50
 from options_advisor import get_options_recommendation
 
-import requests
-yf_session = requests.Session()
-yf_session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive"
-})
-
 app = FastAPI(title="Stock Analytics API")
 
 @app.get("/api/health")
@@ -163,7 +154,7 @@ def get_live_price(ticker: str):
     """
     normalized = normalize_ticker(ticker)
     try:
-        tkr_info = yf.Ticker(normalized, session=yf_session).fast_info
+        tkr_info = yf.Ticker(normalized).fast_info
         ltp = round(float(tkr_info["lastPrice"]), 2)
         previous_close = round(float(tkr_info.get("previousClose", 0)), 2)
         day_change = round(ltp - previous_close, 2) if previous_close else None
@@ -190,7 +181,7 @@ def get_chart_data(ticker: str, period: str = "1y"):
     import pandas as pd
     
     def _fetch():
-        df = yf.Ticker(normalized, session=yf_session).history(period=period)
+        df = yf.Ticker(normalized).history(period=period)
         if df.empty: return []
         
         if isinstance(df.columns, pd.MultiIndex):
@@ -234,32 +225,6 @@ def evaluate_stock(ticker: str):
             detail=f"Not enough data found for ticker '{normalized}'. "
                    "Ensure it has at least 1 year of trading history.",
         )
-    return result
-
-
-@app.get("/api/debug/{ticker}")
-def debug_yfinance(ticker: str):
-    """Diagnoses exactly what yfinance fetches on the render instance."""
-    normalized = normalize_ticker(ticker)
-    try:
-        import yfinance as yf
-        import pandas as pd
-        tkr = yf.Ticker(normalized, session=yf_session)
-        df1 = tkr.history(period="1mo")
-        df2 = tkr.history(period="2y")
-        
-        return {
-            "ticker_received": ticker,
-            "ticker_normalized": normalized,
-            "df1_1mo_empty": df1.empty if isinstance(df1, pd.DataFrame) else True,
-            "df1_1mo_len": len(df1) if isinstance(df1, pd.DataFrame) else 0,
-            "df2_2y_empty": df2.empty if isinstance(df2, pd.DataFrame) else True,
-            "df2_2y_len": len(df2) if isinstance(df2, pd.DataFrame) else 0,
-            "fast_info_keys": list(tkr.fast_info.keys()) if hasattr(tkr, "fast_info") else []
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
 @app.get("/api/stocks/nifty50")
 def nifty50_comparison():
     """
