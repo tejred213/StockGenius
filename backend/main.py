@@ -9,6 +9,11 @@ from options_advisor import get_options_recommendation
 
 app = FastAPI(title="Stock Analytics API")
 
+@app.get("/api/health")
+def health_check():
+    """Endpoint for UptimeRobot to ping to prevent Render cold-starts."""
+    return {"status": "awake", "message": "Render backend is active!"}
+
 # Configure CORS for frontend
 app.add_middleware(
     CORSMiddleware,
