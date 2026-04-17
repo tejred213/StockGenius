@@ -114,7 +114,9 @@ class StockMLEngine:
         )
         df_raw: pd.DataFrame = price_result["data"]
 
-        if df_raw is None or df_raw.empty or len(df_raw) < 250:
+        if df_raw is None or df_raw.empty or len(df_raw) < 60:
+            logger.error(f"Insufficient data for {ticker}: df length is {len(df_raw) if df_raw is not None else 0}")
+            CacheManager.invalidate(f"{ticker}_prices", "data")
             return None
 
         # Flatten any MultiIndex columns (yfinance can return them)

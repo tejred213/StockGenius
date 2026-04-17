@@ -237,6 +237,29 @@ def evaluate_stock(ticker: str):
     return result
 
 
+@app.get("/api/debug/{ticker}")
+def debug_yfinance(ticker: str):
+    """Diagnoses exactly what yfinance fetches on the render instance."""
+    normalized = normalize_ticker(ticker)
+    try:
+        import yfinance as yf
+        import pandas as pd
+        tkr = yf.Ticker(normalized, session=yf_session)
+        df1 = tkr.history(period="1mo")
+        df2 = tkr.history(period="2y")
+        
+        return {
+            "ticker_received": ticker,
+            "ticker_normalized": normalized,
+            "df1_1mo_empty": df1.empty if isinstance(df1, pd.DataFrame) else True,
+            "df1_1mo_len": len(df1) if isinstance(df1, pd.DataFrame) else 0,
+            "df2_2y_empty": df2.empty if isinstance(df2, pd.DataFrame) else True,
+            "df2_2y_len": len(df2) if isinstance(df2, pd.DataFrame) else 0,
+            "fast_info_keys": list(tkr.fast_info.keys()) if hasattr(tkr, "fast_info") else []
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/stocks/nifty50")
 def nifty50_comparison():
     """

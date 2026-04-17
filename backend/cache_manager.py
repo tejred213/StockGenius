@@ -83,6 +83,11 @@ class CacheManager:
         # 2. Expired or missing — try to fetch
         try:
             fresh_data = fetch_fn()
+            
+            import pandas as pd
+            if isinstance(fresh_data, pd.DataFrame) and fresh_data.empty:
+                raise ValueError("Fetched DataFrame is empty, bypassing cache to force retry next time.")
+                
             CacheManager._save(filepath, CacheEntry(fresh_data))
             logger.info("Cache REFRESHED for %s", key)
             return {"data": fresh_data, "stale": False, "from_cache": False}
