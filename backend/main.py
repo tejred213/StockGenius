@@ -225,6 +225,23 @@ def evaluate_stock(ticker: str):
             detail=f"Not enough data found for ticker '{normalized}'. "
                    "Ensure it has at least 1 year of trading history.",
         )
+    return result
+
+@app.get("/api/debug/{ticker}")
+def debug_yfinance(ticker: str):
+    import yfinance as yf
+    try:
+        tkr = yf.Ticker(ticker)
+        df = tkr.history(period="1mo")
+        return {
+            "version": yf.__version__,
+            "df_empty": df.empty,
+            "df_len": len(df),
+            "fast_info": type(tkr.fast_info).__name__
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/stocks/nifty50")
 def nifty50_comparison():
     """
