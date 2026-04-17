@@ -20,6 +20,15 @@ from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from indicators import compute_all_indicators, get_feature_columns
 from cache_manager import CacheManager, TTL_PRICES, TTL_MODEL
 
+import requests
+yf_session = requests.Session()
+yf_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive"
+})
+
 logger = logging.getLogger(__name__)
 
 # ======================================================================
@@ -99,7 +108,7 @@ class StockMLEngine:
         # 1. Fetch price data (with cache)
         price_result = CacheManager.get_or_fetch(
             key=f"{ticker}_prices",
-            fetch_fn=lambda: yf.Ticker(ticker).history(period="2y"),
+            fetch_fn=lambda: yf.Ticker(ticker, session=yf_session).history(period="2y"),
             ttl=TTL_PRICES,
             category="data",
         )
@@ -169,7 +178,7 @@ class StockMLEngine:
 
         # Fetch LTP (Latest Trade Price) — real-time from yfinance fast_info
         try:
-            tkr_info = yf.Ticker(ticker).fast_info
+            tkr_info = yf.Ticker(ticker, session=yf_session).fast_info
             ltp = round(float(tkr_info["lastPrice"]), 2)
             previous_close = round(float(tkr_info.get("previousClose", 0)), 2)
             day_change = round(ltp - previous_close, 2) if previous_close else None
