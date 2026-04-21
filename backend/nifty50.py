@@ -13,7 +13,7 @@ import pandas as pd
 import yfinance as yf
 
 from indicators import compute_all_indicators
-from cache_manager import CacheManager, TTL_NIFTY50, TTL_PRICES
+from cache_manager import CacheManager, TTL_NIFTY50
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +102,49 @@ def compare_nifty50() -> dict[str, Any]:
 # ======================================================================
 
 def _build_comparison() -> list[dict]:
-    """Fetch data for every ticker, compute momentum scores, rank."""
+    """Fetch data for all tickers in bulk, compute momentum scores, rank."""
     results: list[dict] = []
 
-    for entry in NIFTY50_TICKERS:
-        ticker = entry["ticker"]
+    all_tickers = [entry["ticker"] for entry in NIFTY50_TICKERS]
+    ticker_to_entry = {entry["ticker"]: entry for entry in NIFTY50_TICKERS}
+
+    # Bulk download — yfinance fetches all tickers in parallel
+    try:
+        bulk_df = yf.download(
+            all_tickers,
+            period="2y",
+            group_by="ticker",
+            threads=True,
+            progress=False,
+        )
+    except Exception as exc:
+        logger.error("Bulk download failed: %s", exc)
+        return results
+
+    for ticker in all_tickers:
         try:
-            score_data = _score_ticker(ticker)
+            # Extract per-ticker DataFrame from bulk result
+            if len(all_tickers) == 1:
+                df_raw = bulk_df.copy()
+            else:
+                df_raw = bulk_df[ticker].copy()
+
+            # Drop rows where all OHLCV are NaN (ticker may have gaps)
+            df_raw.dropna(how="all", inplace=True)
+
+            if df_raw.empty or len(df_raw) < 250:
+                logger.warning("Nifty50 — insufficient data for %s (%d rows)", ticker, len(df_raw))
+                continue
+
+            # Flatten MultiIndex columns if present
+            if isinstance(df_raw.columns, pd.MultiIndex):
+                df_raw.columns = df_raw.columns.get_level_values(0)
+
+            score_data = _score_ticker_from_df(ticker, df_raw)
             if score_data is None:
                 continue
+
+            entry = ticker_to_entry[ticker]
             results.append({
                 "ticker": ticker,
                 "name": entry["name"],
@@ -130,23 +164,8 @@ def _build_comparison() -> list[dict]:
     return results
 
 
-def _score_ticker(ticker: str) -> dict | None:
-    """Compute a composite momentum score for a single ticker."""
-    # Fetch with cache
-    price_result = CacheManager.get_or_fetch(
-        key=f"{ticker}_prices",
-        fetch_fn=lambda t=ticker: yf.Ticker(t).history(period="2y"),
-        ttl=TTL_PRICES,
-        category="data",
-    )
-    df_raw: pd.DataFrame = price_result["data"]
-    if df_raw is None or df_raw.empty or len(df_raw) < 250:
-        return None
-
-    # Flatten any MultiIndex columns
-    if isinstance(df_raw.columns, pd.MultiIndex):
-        df_raw.columns = df_raw.columns.get_level_values(0)
-
+def _score_ticker_from_df(ticker: str, df_raw: pd.DataFrame) -> dict | None:
+    """Compute a composite momentum score from a pre-fetched DataFrame."""
     df = compute_all_indicators(df_raw)
     df.dropna(inplace=True)
 

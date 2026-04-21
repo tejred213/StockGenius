@@ -138,12 +138,7 @@ def _compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 def _compute_obv(df: pd.DataFrame) -> pd.Series:
-    obv = [0]
-    for i in range(1, len(df)):
-        if df["Close"].iloc[i] > df["Close"].iloc[i - 1]:
-            obv.append(obv[-1] + df["Volume"].iloc[i])
-        elif df["Close"].iloc[i] < df["Close"].iloc[i - 1]:
-            obv.append(obv[-1] - df["Volume"].iloc[i])
-        else:
-            obv.append(obv[-1])
-    return pd.Series(obv, index=df.index)
+    """Vectorized On-Balance Volume — avoids slow Python loop."""
+    direction = np.sign(df["Close"].diff())
+    obv = (direction * df["Volume"]).fillna(0).cumsum()
+    return obv

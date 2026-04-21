@@ -13,6 +13,7 @@ Provides:
 import logging
 import numpy as np
 import pandas as pd
+from curl_cffi.requests import Session as CffiSession
 import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
@@ -21,6 +22,9 @@ from indicators import compute_all_indicators, get_feature_columns
 from cache_manager import CacheManager, TTL_PRICES, TTL_MODEL
 
 logger = logging.getLogger(__name__)
+
+# Shared curl_cffi session for yfinance — reuses TCP connections & bypasses bot detection
+_session = CffiSession(impersonate="chrome")
 
 # ======================================================================
 # Label definitions
@@ -99,7 +103,7 @@ class StockMLEngine:
         # 1. Fetch price data (with cache)
         price_result = CacheManager.get_or_fetch(
             key=f"{ticker}_prices",
-            fetch_fn=lambda: yf.Ticker(ticker).history(period="2y"),
+            fetch_fn=lambda: yf.Ticker(ticker, session=_session).history(period="2y"),
             ttl=TTL_PRICES,
             category="data",
         )
@@ -171,7 +175,7 @@ class StockMLEngine:
 
         # Fetch LTP (Latest Trade Price) — real-time from yfinance fast_info
         try:
-            tkr_info = yf.Ticker(ticker).fast_info
+            tkr_info = yf.Ticker(ticker, session=_session).fast_info
             ltp = round(float(tkr_info["lastPrice"]), 2)
             previous_close = round(float(tkr_info.get("previousClose", 0)), 2)
             day_change = round(ltp - previous_close, 2) if previous_close else None
@@ -251,23 +255,23 @@ class StockMLEngine:
 
         # --- Gradient Boosting for action signals ---
         gb_action = GradientBoostingClassifier(
-            n_estimators=200,
-            max_depth=6,
+            n_estimators=100,
+            max_depth=5,
             learning_rate=0.1,
             random_state=42,
         )
 
         # --- Random Forest for action signals ---
         rf_action = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=10,
+            n_estimators=100,
+            max_depth=8,
             random_state=42,
             n_jobs=-1,
         )
 
         # Time-series cross-validation (5 folds)
-        tscv = TimeSeriesSplit(n_splits=5)
-        cv_scores = cross_val_score(rf_action, X, y_action, cv=tscv, scoring="accuracy")
+        tscv = TimeSeriesSplit(n_splits=3)
+        cv_scores = cross_val_score(rf_action, X, y_action, cv=tscv, scoring="accuracy", n_jobs=-1)
         cv_accuracy = round(float(cv_scores.mean()) * 100, 2)
 
         # Fit on full data

@@ -51,9 +51,11 @@ export default function Dashboard() {
   const [livePriceData, setLivePriceData] = useState(null);
   const [priceFlash, setPriceFlash] = useState(null); // 'up' or 'down'
 
-  // Poll for live price updates
+  // Poll for live price updates (throttled — waits for response before re-polling)
   useEffect(() => {
-    let intervalId;
+    let cancelled = false;
+    let timeoutId;
+
     if (data && data.ticker) {
       // Initialize with current data
       setLivePriceData({
@@ -62,26 +64,40 @@ export default function Dashboard() {
         day_change_pct: data.day_change_pct,
         previous_close: data.previous_close
       });
-      
-      intervalId = setInterval(async () => {
+
+      const pollPrice = async () => {
+        if (cancelled) return;
         try {
           const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
           const res = await axios.get(`${API_URL}/api/stocks/price/${data.ticker}`);
           const newPrice = res.data;
-          
-          setLivePriceData(prev => {
-            if (prev && newPrice.ltp !== prev.ltp) {
-              setPriceFlash(newPrice.ltp > prev.ltp ? 'up' : 'down');
-              setTimeout(() => setPriceFlash(null), 1000);
-            }
-            return newPrice;
-          });
+
+          if (!cancelled) {
+            setLivePriceData(prev => {
+              if (prev && newPrice.ltp !== prev.ltp) {
+                setPriceFlash(newPrice.ltp > prev.ltp ? 'up' : 'down');
+                setTimeout(() => setPriceFlash(null), 1000);
+              }
+              return newPrice;
+            });
+          }
         } catch (err) {
           console.error("Failed to fetch live price", err);
         }
-      }, 1000); // Poll every 1 second
+        // Schedule next poll only after current one completes
+        if (!cancelled) {
+          timeoutId = setTimeout(pollPrice, 5000);
+        }
+      };
+
+      // Start first poll after a short delay
+      timeoutId = setTimeout(pollPrice, 5000);
     }
-    return () => clearInterval(intervalId);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [data]);
 
   const handleSearch = async (e) => {
