@@ -1,13 +1,20 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List
+import logging
 
+from curl_cffi.requests import Session as CffiSession
 import yfinance as yf
 from ml_engine import StockMLEngine
 from nifty50 import compare_nifty50
 from options_advisor import get_options_recommendation
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Stock Analytics API")
+
+# Shared curl_cffi session — reuses TCP connections & bypasses bot detection
+_session = CffiSession(impersonate="chrome")
 
 @app.get("/api/health")
 def health_check():
@@ -149,26 +156,53 @@ def read_root():
 @app.get("/api/stocks/price/{ticker}")
 def get_live_price(ticker: str):
     """
-    Fast endpoint to get the live price for a ticker 
+    Fast endpoint to get the live price for a ticker
     without running the full ML evaluation.
+    Uses a shared session for connection reuse and has a
+    fallback chain: fast_info → history(1d) close.
     """
     normalized = normalize_ticker(ticker)
+    tkr = yf.Ticker(normalized, session=_session)
+
+    ltp = None
+    previous_close = None
+
+    # --- Attempt 1: fast_info (fastest, real-time) ---
     try:
-        tkr_info = yf.Ticker(normalized).fast_info
-        ltp = round(float(tkr_info["lastPrice"]), 2)
-        previous_close = round(float(tkr_info.get("previousClose", 0)), 2)
-        day_change = round(ltp - previous_close, 2) if previous_close else None
-        day_change_pct = round((day_change / previous_close) * 100, 2) if previous_close else None
-        
-        return {
-            "ticker": normalized,
-            "ltp": ltp,
-            "previous_close": previous_close,
-            "day_change": day_change,
-            "day_change_pct": day_change_pct,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        fi = tkr.fast_info
+        ltp = round(float(fi["lastPrice"]), 2)
+        previous_close = round(float(fi.get("previousClose", 0)), 2)
+    except Exception as e:
+        logger.warning("fast_info failed for %s: %s — falling back to history", normalized, e)
+
+    # --- Attempt 2: latest history close (reliable fallback) ---
+    if ltp is None:
+        try:
+            hist = tkr.history(period="5d")
+            if hist is not None and not hist.empty:
+                import pandas as pd
+                if isinstance(hist.columns, pd.MultiIndex):
+                    hist.columns = hist.columns.get_level_values(0)
+                ltp = round(float(hist["Close"].iloc[-1]), 2)
+                if len(hist) >= 2:
+                    previous_close = round(float(hist["Close"].iloc[-2]), 2)
+        except Exception as e2:
+            logger.error("history fallback also failed for %s: %s", normalized, e2)
+            raise HTTPException(status_code=400, detail=f"Could not fetch price for {normalized}")
+
+    if ltp is None:
+        raise HTTPException(status_code=400, detail=f"No price data available for {normalized}")
+
+    day_change = round(ltp - previous_close, 2) if previous_close else None
+    day_change_pct = round((day_change / previous_close) * 100, 2) if previous_close and day_change is not None else None
+
+    return {
+        "ticker": normalized,
+        "ltp": ltp,
+        "previous_close": previous_close,
+        "day_change": day_change,
+        "day_change_pct": day_change_pct,
+    }
 
 
 @app.get("/api/stocks/chart/{ticker}")
@@ -181,7 +215,7 @@ def get_chart_data(ticker: str, period: str = "1y"):
     import pandas as pd
     
     def _fetch():
-        df = yf.Ticker(normalized).history(period=period)
+        df = yf.Ticker(normalized, session=_session).history(period=period)
         if df.empty: return []
         
         if isinstance(df.columns, pd.MultiIndex):
