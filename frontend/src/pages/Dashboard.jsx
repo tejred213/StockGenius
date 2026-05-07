@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
-import { Search, TrendingUp, TrendingDown, BarChart2, Activity, Zap, Target, Brain, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, BarChart2, Activity, Zap, Target, Brain, ArrowUpRight, ArrowDownRight, Minus, Newspaper, ExternalLink } from 'lucide-react';
 import TradingViewChart from '../components/TradingViewChart';
 
 const getTradingViewSymbol = (ticker) => {
@@ -43,10 +44,13 @@ const getChangeIcon = (val) => {
 };
 
 export default function Dashboard() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [ticker, setTicker] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [newsArticles, setNewsArticles] = useState([]);
+  const [newsLoading, setNewsLoading] = useState(false);
 
   const [livePriceData, setLivePriceData] = useState(null);
   const [priceFlash, setPriceFlash] = useState(null); // 'up' or 'down'
@@ -100,18 +104,26 @@ export default function Dashboard() {
     };
   }, [data]);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!ticker) return;
+  const runSearch = async (searchTicker) => {
+    if (!searchTicker) return;
 
     setLoading(true);
     setError('');
     setData(null);
+    setNewsArticles([]);
+
+    const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
     try {
-      const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
-      const response = await axios.get(`${API_URL}/api/stocks/evaluate/${ticker}`);
+      const response = await axios.get(`${API_URL}/api/stocks/evaluate/${searchTicker}`);
       setData(response.data);
+
+      // Fetch news in background
+      setNewsLoading(true);
+      axios.get(`${API_URL}/api/stocks/news/${searchTicker}`)
+        .then(res => setNewsArticles(res.data?.articles || []))
+        .catch(() => setNewsArticles([]))
+        .finally(() => setNewsLoading(false));
     } catch (err) {
       if (err.response && err.response.status === 404) {
         setError('Not enough data found for this ticker. Please check the symbol and try again.');
@@ -121,6 +133,21 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Auto-search when navigated from Screener with ?search= param
+  useEffect(() => {
+    const searchQuery = searchParams.get('search');
+    if (searchQuery) {
+      setTicker(searchQuery.toUpperCase());
+      runSearch(searchQuery);
+      setSearchParams({}, { replace: true });
+    }
+  }, []);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    runSearch(ticker);
   };
 
   return (
@@ -358,6 +385,59 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Row 5: News */}
+          <div className="glass-panel">
+            <h3 className="section-heading">
+              <Newspaper size={16} /> Latest News
+            </h3>
+            {newsLoading && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Loading news...</p>
+            )}
+            {!newsLoading && newsArticles.length === 0 && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No recent news found for this stock.</p>
+            )}
+            {!newsLoading && newsArticles.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                {newsArticles.map((article, i) => (
+                  <a
+                    key={i}
+                    href={article.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex', gap: '12px',
+                      padding: '14px', borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      textDecoration: 'none', color: 'inherit',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+                  >
+                    {article.thumbnail && (
+                      <img
+                        src={article.thumbnail}
+                        alt=""
+                        style={{ width: '80px', height: '60px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }}
+                      />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, lineHeight: 1.4, marginBottom: '6px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {article.title}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {article.publisher && <span>{article.publisher}</span>}
+                        {article.published && <span>{new Date(article.published).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>}
+                        <ExternalLink size={10} />
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>

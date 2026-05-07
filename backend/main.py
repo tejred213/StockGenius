@@ -6,7 +6,8 @@ import logging
 from curl_cffi.requests import Session as CffiSession
 import yfinance as yf
 from ml_engine import StockMLEngine
-from nifty50 import compare_nifty50
+from nifty50 import compare_nifty50, NIFTY50_TICKERS
+from smallcap import compare_smallcap, SMALLCAP_TICKERS
 from options_advisor import get_options_recommendation
 
 logger = logging.getLogger(__name__)
@@ -302,4 +303,155 @@ def options_advisor(symbol: str, equity_signal: str = "Hold"):
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+# ======================================================================
+# Small Cap Stocks
+# ======================================================================
+
+@app.get("/api/stocks/smallcap")
+def smallcap_comparison():
+    """Batch-evaluates small cap stocks and returns a momentum-ranked leaderboard."""
+    try:
+        return compare_smallcap()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ======================================================================
+# Momentum Stocks — top movers from Nifty 50 + Small Caps combined
+# ======================================================================
+
+@app.get("/api/stocks/momentum")
+def momentum_stocks(limit: int = 20):
+    """
+    Returns the top momentum stocks across Nifty 50 and Small Cap universes,
+    sorted by momentum_score descending.
+    """
+    from cache_manager import CacheManager, TTL_NIFTY50
+
+    def _build_momentum():
+        combined = []
+        try:
+            n50 = compare_nifty50()
+            combined.extend({**s, "universe": "Nifty 50"} for s in n50.get("leaderboard", []))
+        except Exception as e:
+            logger.warning("Momentum — nifty50 fetch failed: %s", e)
+
+        try:
+            sc = compare_smallcap()
+            combined.extend({**s, "universe": "Small Cap"} for s in sc.get("leaderboard", []))
+        except Exception as e:
+            logger.warning("Momentum — smallcap fetch failed: %s", e)
+
+        combined.sort(key=lambda x: x.get("momentum_score", 0), reverse=True)
+        for i, r in enumerate(combined, 1):
+            r["rank"] = i
+        return combined
+
+    result = CacheManager.get_or_fetch(
+        key="momentum_combined",
+        fetch_fn=_build_momentum,
+        ttl=TTL_NIFTY50,
+        category="data",
+    )
+    data = result["data"][:limit]
+    return {
+        "stocks": data,
+        "count": len(data),
+        "stale": result.get("stale", False),
+    }
+
+
+# ======================================================================
+# Strong Buy Stocks — ML-evaluated "Strong Buy" signals
+# ======================================================================
+
+@app.get("/api/stocks/strong-buys")
+def strong_buy_stocks():
+    """
+    Batch-evaluates stocks from Nifty 50 + Small Cap and returns those
+    with a 'Strong Buy' ML signal.
+    """
+    from cache_manager import CacheManager, TTL_NIFTY50
+
+    def _find_strong_buys():
+        all_tickers = (
+            [(t["ticker"], t["name"], t["sector"], "Nifty 50") for t in NIFTY50_TICKERS]
+            + [(t["ticker"], t["name"], t["sector"], "Small Cap") for t in SMALLCAP_TICKERS]
+        )
+        strong_buys = []
+
+        for ticker, name, sector, universe in all_tickers:
+            try:
+                result = ml_engine.evaluate(ticker)
+                if result and result.get("prediction") == "Strong Buy":
+                    strong_buys.append({
+                        "ticker": ticker,
+                        "name": name,
+                        "sector": sector,
+                        "universe": universe,
+                        "prediction": result["prediction"],
+                        "confidence": result["confidence"],
+                        "current_price": result["ltp"],
+                        "day_change_pct": result.get("day_change_pct"),
+                        "trade_strategy": result["trade_strategy"],
+                        "rsi": result["technicals"]["RSI_14"],
+                        "macd": result["technicals"]["MACD"],
+                    })
+            except Exception as e:
+                logger.warning("Strong-buy scan — skipped %s: %s", ticker, e)
+
+        strong_buys.sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        for i, r in enumerate(strong_buys, 1):
+            r["rank"] = i
+        return strong_buys
+
+    result = CacheManager.get_or_fetch(
+        key="strong_buys_combined",
+        fetch_fn=_find_strong_buys,
+        ttl=TTL_NIFTY50,
+        category="data",
+    )
+    return {
+        "stocks": result["data"],
+        "count": len(result["data"]),
+        "stale": result.get("stale", False),
+    }
+
+
+# ======================================================================
+# Stock News
+# ======================================================================
+
+@app.get("/api/stocks/news/{ticker}")
+def get_stock_news(ticker: str):
+    """
+    Returns recent news articles for a ticker using yfinance.
+    """
+    normalized = normalize_ticker(ticker)
+    try:
+        tkr = yf.Ticker(normalized, session=_session)
+        news_items = tkr.news or []
+        articles = []
+        for item in news_items[:10]:
+            content = item.get("content", {})
+            thumbnail_url = ""
+            thumb = content.get("thumbnail")
+            if thumb and isinstance(thumb, dict):
+                resolutions = thumb.get("resolutions", [])
+                if resolutions:
+                    thumbnail_url = resolutions[-1].get("url", "")
+
+            articles.append({
+                "title": content.get("title", item.get("title", "")),
+                "publisher": content.get("provider", {}).get("displayName", ""),
+                "link": content.get("canonicalUrl", {}).get("url", item.get("link", "")),
+                "published": content.get("pubDate", ""),
+                "thumbnail": thumbnail_url,
+            })
+        return {"ticker": normalized, "articles": articles}
+    except Exception as e:
+        logger.warning("News fetch failed for %s: %s", normalized, e)
+        return {"ticker": normalized, "articles": []}
 
