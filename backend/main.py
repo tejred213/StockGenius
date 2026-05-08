@@ -319,40 +319,49 @@ def smallcap_comparison():
 
 
 # ======================================================================
+# Shared helper — merges Nifty 50 + Small Cap momentum data (cached)
+# ======================================================================
+
+def _get_all_momentum_stocks() -> list[dict]:
+    """
+    Merges already-cached Nifty 50 and Small Cap leaderboards.
+    Each sub-call has its own 4-hour cache, so this is essentially free.
+    """
+    combined = []
+    try:
+        n50 = compare_nifty50()
+        combined.extend({**s, "universe": "Nifty 50"} for s in n50.get("leaderboard", []))
+    except Exception as e:
+        logger.warning("Momentum — nifty50 fetch failed: %s", e)
+    try:
+        sc = compare_smallcap()
+        combined.extend({**s, "universe": "Small Cap"} for s in sc.get("leaderboard", []))
+    except Exception as e:
+        logger.warning("Momentum — smallcap fetch failed: %s", e)
+
+    combined.sort(key=lambda x: x.get("momentum_score", 0), reverse=True)
+    for i, r in enumerate(combined, 1):
+        r["rank"] = i
+    return combined
+
+
+# ======================================================================
 # Momentum Stocks — top movers from Nifty 50 + Small Caps combined
 # ======================================================================
 
 @app.get("/api/stocks/momentum")
 def momentum_stocks(limit: int = 20):
     """
-    Returns the top momentum stocks across Nifty 50 and Small Cap universes,
-    sorted by momentum_score descending.
+    Returns the top momentum stocks across Nifty 50 and Small Cap universes.
+    Cached for 24 hours (refreshed daily). Underlying nifty50/smallcap data
+    has its own 4-hour cache so no double-fetch occurs.
     """
-    from cache_manager import CacheManager, TTL_NIFTY50
-
-    def _build_momentum():
-        combined = []
-        try:
-            n50 = compare_nifty50()
-            combined.extend({**s, "universe": "Nifty 50"} for s in n50.get("leaderboard", []))
-        except Exception as e:
-            logger.warning("Momentum — nifty50 fetch failed: %s", e)
-
-        try:
-            sc = compare_smallcap()
-            combined.extend({**s, "universe": "Small Cap"} for s in sc.get("leaderboard", []))
-        except Exception as e:
-            logger.warning("Momentum — smallcap fetch failed: %s", e)
-
-        combined.sort(key=lambda x: x.get("momentum_score", 0), reverse=True)
-        for i, r in enumerate(combined, 1):
-            r["rank"] = i
-        return combined
+    from cache_manager import CacheManager, TTL_DAILY
 
     result = CacheManager.get_or_fetch(
         key="momentum_combined",
-        fetch_fn=_build_momentum,
-        ttl=TTL_NIFTY50,
+        fetch_fn=_get_all_momentum_stocks,
+        ttl=TTL_DAILY,
         category="data",
     )
     data = result["data"][:limit]
@@ -364,43 +373,59 @@ def momentum_stocks(limit: int = 20):
 
 
 # ======================================================================
-# Strong Buy Stocks — ML-evaluated "Strong Buy" signals
+# Strong Buy Stocks — lightweight, derived from cached momentum data
 # ======================================================================
+
+def _is_strong_buy(stock: dict) -> tuple[bool, float]:
+    """
+    Heuristic Strong Buy filter using already-computed momentum data.
+    No ML evaluation — reuses cached momentum/technical scores.
+
+    Criteria (all must be true):
+      - momentum_score >= 65
+      - RSI between 50-80 (strong uptrend, not yet overbought)
+      - MACD histogram > 0 (bullish momentum)
+      - Price above SMA 50 and SMA 200 (uptrend)
+      - ADX >= 20 (trend has strength)
+    """
+    ms = stock.get("momentum_score", 0)
+    rsi = stock.get("rsi", 50)
+    macd_h = stock.get("macd_histogram", 0)
+    p50 = stock.get("price_above_sma50", 1)
+    p200 = stock.get("price_above_sma200", 1)
+    adx = stock.get("adx", 0)
+
+    if ms < 65 or rsi < 50 or rsi > 80 or macd_h <= 0 or p50 < 1.0 or p200 < 1.0 or adx < 20:
+        return False, 0
+
+    confidence = round(
+        0.30 * min(ms / 100, 1)
+        + 0.20 * min((rsi - 50) / 30, 1)
+        + 0.15 * min(macd_h / 10, 1)
+        + 0.15 * min((p50 - 1.0) / 0.15, 1)
+        + 0.10 * min((p200 - 1.0) / 0.20, 1)
+        + 0.10 * min(adx / 50, 1),
+        4,
+    ) * 100
+    return True, round(confidence, 2)
+
 
 @app.get("/api/stocks/strong-buys")
 def strong_buy_stocks():
     """
-    Batch-evaluates stocks from Nifty 50 + Small Cap and returns those
-    with a 'Strong Buy' ML signal.
+    Returns stocks with strong bullish signals, derived from the
+    already-cached momentum data. Zero additional API calls or ML training.
+    Cached for 24 hours.
     """
-    from cache_manager import CacheManager, TTL_NIFTY50
+    from cache_manager import CacheManager, TTL_DAILY
 
     def _find_strong_buys():
-        all_tickers = (
-            [(t["ticker"], t["name"], t["sector"], "Nifty 50") for t in NIFTY50_TICKERS]
-            + [(t["ticker"], t["name"], t["sector"], "Small Cap") for t in SMALLCAP_TICKERS]
-        )
+        all_stocks = _get_all_momentum_stocks()
         strong_buys = []
-
-        for ticker, name, sector, universe in all_tickers:
-            try:
-                result = ml_engine.evaluate(ticker)
-                if result and result.get("prediction") == "Strong Buy":
-                    strong_buys.append({
-                        "ticker": ticker,
-                        "name": name,
-                        "sector": sector,
-                        "universe": universe,
-                        "prediction": result["prediction"],
-                        "confidence": result["confidence"],
-                        "current_price": result["ltp"],
-                        "day_change_pct": result.get("day_change_pct"),
-                        "trade_strategy": result["trade_strategy"],
-                        "rsi": result["technicals"]["RSI_14"],
-                        "macd": result["technicals"]["MACD"],
-                    })
-            except Exception as e:
-                logger.warning("Strong-buy scan — skipped %s: %s", ticker, e)
+        for stock in all_stocks:
+            is_sb, confidence = _is_strong_buy(stock)
+            if is_sb:
+                strong_buys.append({**stock, "prediction": "Strong Buy", "confidence": confidence})
 
         strong_buys.sort(key=lambda x: x.get("confidence", 0), reverse=True)
         for i, r in enumerate(strong_buys, 1):
@@ -410,7 +435,7 @@ def strong_buy_stocks():
     result = CacheManager.get_or_fetch(
         key="strong_buys_combined",
         fetch_fn=_find_strong_buys,
-        ttl=TTL_NIFTY50,
+        ttl=TTL_DAILY,
         category="data",
     )
     return {

@@ -74,7 +74,7 @@ function StrongBuyTable({ stocks, onTickerClick }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-            {['#', 'Stock', 'Sector', 'Universe', 'Price', 'Day %', 'Confidence', 'Strategy', 'RSI'].map(h => (
+            {['#', 'Stock', 'Sector', 'Universe', 'Price', 'Confidence', 'RSI', 'ADX', 'Momentum'].map(h => (
               <th key={h} style={{ padding: '12px 10px', textAlign: h === 'Stock' ? 'left' : 'center', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
             ))}
           </tr>
@@ -95,22 +95,18 @@ function StrongBuyTable({ stocks, onTickerClick }) {
               </td>
               <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 600 }}>₹{s.current_price?.toLocaleString('en-IN')}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                {s.day_change_pct != null && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: s.day_change_pct >= 0 ? 'var(--color-buy)' : 'var(--color-sell)', fontWeight: 600 }}>
-                    {getChangeIcon(s.day_change_pct)}
-                    {s.day_change_pct > 0 ? '+' : ''}{s.day_change_pct}%
-                  </span>
-                )}
-              </td>
-              <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                 <span style={{ fontWeight: 700, color: 'var(--color-buy)' }}>{s.confidence}%</span>
               </td>
-              <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <span style={{ fontSize: '12px', padding: '3px 10px', borderRadius: '12px', background: s.trade_strategy === 'Swing Trade' ? 'rgba(139,92,246,0.15)' : s.trade_strategy === 'Positional' ? 'rgba(6,182,212,0.15)' : 'rgba(249,115,22,0.15)', color: s.trade_strategy === 'Swing Trade' ? '#a78bfa' : s.trade_strategy === 'Positional' ? '#22d3ee' : '#fb923c' }}>
-                  {s.trade_strategy}
-                </span>
-              </td>
               <td style={{ padding: '12px 10px', textAlign: 'center', color: s.rsi > 70 ? 'var(--color-sell)' : s.rsi < 30 ? 'var(--color-buy)' : 'white' }}>{s.rsi}</td>
+              <td style={{ padding: '12px 10px', textAlign: 'center' }}>{s.adx}</td>
+              <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <div style={{ width: '60px', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${s.momentum_score}%`, borderRadius: '3px', background: getMomentumColor(s.momentum_score), transition: 'width 0.6s ease' }} />
+                  </div>
+                  <span style={{ fontWeight: 700, color: getMomentumColor(s.momentum_score), minWidth: '36px' }}>{s.momentum_score}</span>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
