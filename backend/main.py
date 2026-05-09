@@ -350,7 +350,7 @@ def _get_all_momentum_stocks() -> list[dict]:
 # ======================================================================
 
 @app.get("/api/stocks/momentum")
-def momentum_stocks(limit: int = 20):
+def momentum_stocks(limit: int = 80):
     """
     Returns the top momentum stocks across Nifty 50 and Small Cap universes.
     Cached for 24 hours (refreshed daily). Underlying nifty50/smallcap data
