@@ -135,7 +135,7 @@ export default function Screener() {
       setError('');
       try {
         if (activeTab === 'momentum' && !momentumData) {
-          const res = await axios.get(`${API_URL}/api/stocks/momentum?limit=30`);
+          const res = await axios.get(`${API_URL}/api/stocks/momentum?limit=80`);
           setMomentumData(res.data);
         } else if (activeTab === 'strongbuy' && !strongBuyData) {
           const res = await axios.get(`${API_URL}/api/stocks/strong-buys`);
