@@ -1,5 +1,13 @@
-fly.toml
-.git/
+venv/
 __pycache__/
-.envrc
-.venv/
+*.pyc
+*.pyo
+*.pyd
+.Python
+cache/
+.pytest_cache/
+.DS_Store
+.env
+.git
+.gitignore
+test_*.py

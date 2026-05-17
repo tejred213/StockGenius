@@ -19,8 +19,7 @@ _session = CffiSession(impersonate="chrome")
 
 @app.get("/api/health")
 def health_check():
-    """Endpoint for UptimeRobot to ping to prevent Render cold-starts."""
-    return {"status": "awake", "message": "Render backend is active!"}
+    return {"status": "awake", "message": "Backend is active"}
 
 # Configure CORS for frontend
 app.add_middleware(
