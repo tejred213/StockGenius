@@ -196,13 +196,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 5. Open a Pull Request
 
 ## Roadmap
-
-- [ ] Mobile app (React Native / Flutter)
-- [ ] Portfolio tracking and alerts
-- [ ] Advanced charting with technical patterns
-- [ ] Backtesting engine
-- [ ] Market sentiment analysis
-- [ ] Community features
+- [x] Portfolio tracking and alerts
+- [x] Advanced charting with technical patterns
+- [x] Backtesting engine
+- [x] Market sentiment analysis
+- [x] Community features
 
 ## License
 
