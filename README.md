@@ -2,7 +2,7 @@
 
 AI-powered stock analysis platform for NSE (National Stock Exchange) markets. Real-time momentum tracking, ML-driven signals, and smart portfolio insights.
 
-**Live Demo:** [stockgenius-api.fly.dev](https://stockgenius-api.fly.dev)
+**Live Demo:** [stock-genius-in.vercel.app]([(https://stock-genius-in.vercel.app/))
 
 ## Features
 
