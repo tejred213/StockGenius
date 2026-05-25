@@ -1,15 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { TrendingUp, Zap, BarChart2, ArrowUpRight, ArrowDownRight, Minus, Loader, Trophy, Target, Brain } from 'lucide-react';
+import { TrendingUp, Zap, BarChart2, BarChart3, ArrowUpRight, ArrowDownRight, Minus, Loader, Trophy, Target, Brain } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 const TABS = [
   { id: 'momentum', label: 'Momentum', icon: <Zap size={16} /> },
   { id: 'strongbuy', label: 'Strong Buy', icon: <Brain size={16} /> },
+  { id: 'midcap', label: 'Mid Cap', icon: <BarChart3 size={16} /> },
   { id: 'smallcap', label: 'Small Cap', icon: <BarChart2 size={16} /> },
 ];
+
+const UNIVERSE_STYLES = {
+  'Nifty 50': { bg: 'rgba(59,130,246,0.15)',  color: '#60a5fa' },
+  'Mid Cap':  { bg: 'rgba(16,185,129,0.15)',  color: '#34d399' },
+  'Small Cap':{ bg: 'rgba(139,92,246,0.15)',  color: '#a78bfa' },
+};
+
+const getUniverseStyle = (u) => UNIVERSE_STYLES[u] || { bg: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' };
 
 const getChangeIcon = (val) => {
   if (val > 0) return <ArrowUpRight size={14} />;
@@ -44,7 +53,7 @@ function MomentumTable({ stocks, onTickerClick }) {
               </td>
               <td style={{ padding: '12px 10px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>{s.sector}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '12px', background: s.universe === 'Nifty 50' ? 'rgba(59,130,246,0.15)' : 'rgba(139,92,246,0.15)', color: s.universe === 'Nifty 50' ? '#60a5fa' : '#a78bfa' }}>
+                <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '12px', background: getUniverseStyle(s.universe).bg, color: getUniverseStyle(s.universe).color }}>
                   {s.universe}
                 </span>
               </td>
@@ -89,7 +98,7 @@ function StrongBuyTable({ stocks, onTickerClick }) {
               </td>
               <td style={{ padding: '12px 10px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>{s.sector}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '12px', background: s.universe === 'Nifty 50' ? 'rgba(59,130,246,0.15)' : 'rgba(139,92,246,0.15)', color: s.universe === 'Nifty 50' ? '#60a5fa' : '#a78bfa' }}>
+                <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '12px', background: getUniverseStyle(s.universe).bg, color: getUniverseStyle(s.universe).color }}>
                   {s.universe}
                 </span>
               </td>
@@ -119,6 +128,7 @@ export default function Screener() {
   const [activeTab, setActiveTab] = useState('momentum');
   const [momentumData, setMomentumData] = useState(null);
   const [strongBuyData, setStrongBuyData] = useState(null);
+  const [midCapData, setMidCapData] = useState(null);
   const [smallCapData, setSmallCapData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -140,6 +150,9 @@ export default function Screener() {
         } else if (activeTab === 'strongbuy' && !strongBuyData) {
           const res = await axios.get(`${API_URL}/api/stocks/strong-buys`);
           setStrongBuyData(res.data);
+        } else if (activeTab === 'midcap' && !midCapData) {
+          const res = await axios.get(`${API_URL}/api/stocks/midcap`);
+          setMidCapData(res.data);
         } else if (activeTab === 'smallcap' && !smallCapData) {
           const res = await axios.get(`${API_URL}/api/stocks/smallcap`);
           setSmallCapData(res.data);
@@ -155,6 +168,7 @@ export default function Screener() {
 
   const currentData = activeTab === 'momentum' ? momentumData
     : activeTab === 'strongbuy' ? strongBuyData
+    : activeTab === 'midcap' ? midCapData
     : smallCapData;
 
   const stocks = activeTab === 'momentum' ? currentData?.stocks
@@ -165,7 +179,7 @@ export default function Screener() {
     <div>
       <div style={{ textAlign: 'center', marginBottom: '32px' }}>
         <h1 className="title">Stock Screener</h1>
-        <p className="subtitle">Discover top momentum stocks, strong buy signals, and small cap opportunities</p>
+        <p className="subtitle">Discover top momentum stocks, strong buy signals, mid cap & small cap opportunities</p>
       </div>
 
       {/* Tabs */}
@@ -207,6 +221,7 @@ export default function Screener() {
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                 {activeTab === 'momentum' && <><Trophy size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />Top {stocks.length} momentum stocks across all universes</>}
                 {activeTab === 'strongbuy' && <><Brain size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />{stocks.length} stocks with ML "Strong Buy" signal</>}
+                {activeTab === 'midcap' && <><BarChart3 size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />{stocks.length} mid cap stocks ranked by momentum</>}
                 {activeTab === 'smallcap' && <><BarChart2 size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />{stocks.length} small cap stocks ranked by momentum</>}
               </span>
               {currentData?.stale && (

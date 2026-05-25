@@ -8,6 +8,7 @@ import yfinance as yf
 from ml_engine import StockMLEngine
 from nifty50 import compare_nifty50, NIFTY50_TICKERS
 from smallcap import compare_smallcap, SMALLCAP_TICKERS
+from midcap import compare_midcap, MIDCAP_TICKERS
 from options_advisor import get_options_recommendation
 
 logger = logging.getLogger(__name__)
@@ -318,12 +319,25 @@ def smallcap_comparison():
 
 
 # ======================================================================
-# Shared helper — merges Nifty 50 + Small Cap momentum data (cached)
+# Mid Cap Stocks
+# ======================================================================
+
+@app.get("/api/stocks/midcap")
+def midcap_comparison():
+    """Batch-evaluates mid cap stocks and returns a momentum-ranked leaderboard."""
+    try:
+        return compare_midcap()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ======================================================================
+# Shared helper — merges Nifty 50 + Mid Cap + Small Cap momentum data (cached)
 # ======================================================================
 
 def _get_all_momentum_stocks() -> list[dict]:
     """
-    Merges already-cached Nifty 50 and Small Cap leaderboards.
+    Merges already-cached Nifty 50, Mid Cap, and Small Cap leaderboards.
     Each sub-call has its own 4-hour cache, so this is essentially free.
     """
     combined = []
@@ -332,6 +346,11 @@ def _get_all_momentum_stocks() -> list[dict]:
         combined.extend({**s, "universe": "Nifty 50"} for s in n50.get("leaderboard", []))
     except Exception as e:
         logger.warning("Momentum — nifty50 fetch failed: %s", e)
+    try:
+        mc = compare_midcap()
+        combined.extend({**s, "universe": "Mid Cap"} for s in mc.get("leaderboard", []))
+    except Exception as e:
+        logger.warning("Momentum — midcap fetch failed: %s", e)
     try:
         sc = compare_smallcap()
         combined.extend({**s, "universe": "Small Cap"} for s in sc.get("leaderboard", []))
