@@ -16,7 +16,7 @@ TTL_PRICES = 6 * 3600        # 6 hours  — stock price data
 TTL_OPTION_CHAIN = 2 * 3600  # 2 hours  — live option chain
 TTL_FNO_HIST = 24 * 3600     # 24 hours — historical F&O bhav copies
 TTL_NIFTY50 = 4 * 3600       # 4 hours  — Nifty 50 comparison
-TTL_DAILY = 24 * 3600        # 24 hours — refreshed once per day (momentum, strong buys)
+TTL_DAILY = 24 * 3600        # 24 hours — reserved for daily-cadence data
 
 
 class CacheEntry:

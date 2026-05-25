@@ -352,15 +352,15 @@ def _get_all_momentum_stocks() -> list[dict]:
 def momentum_stocks(limit: int = 80):
     """
     Returns the top momentum stocks across Nifty 50 and Small Cap universes.
-    Cached for 24 hours (refreshed daily). Underlying nifty50/smallcap data
-    has its own 4-hour cache so no double-fetch occurs.
+    Cached for 4 hours, synced with the underlying nifty50/smallcap caches
+    so the screener always reflects the freshest leaderboard data.
     """
-    from cache_manager import CacheManager, TTL_DAILY
+    from cache_manager import CacheManager, TTL_NIFTY50
 
     result = CacheManager.get_or_fetch(
         key="momentum_combined",
         fetch_fn=_get_all_momentum_stocks,
-        ttl=TTL_DAILY,
+        ttl=TTL_NIFTY50,
         category="data",
     )
     data = result["data"][:limit]
@@ -414,9 +414,9 @@ def strong_buy_stocks():
     """
     Returns stocks with strong bullish signals, derived from the
     already-cached momentum data. Zero additional API calls or ML training.
-    Cached for 24 hours.
+    Cached for 4 hours, synced with the underlying momentum data.
     """
-    from cache_manager import CacheManager, TTL_DAILY
+    from cache_manager import CacheManager, TTL_NIFTY50
 
     def _find_strong_buys():
         all_stocks = _get_all_momentum_stocks()
@@ -434,7 +434,7 @@ def strong_buy_stocks():
     result = CacheManager.get_or_fetch(
         key="strong_buys_combined",
         fetch_fn=_find_strong_buys,
-        ttl=TTL_DAILY,
+        ttl=TTL_NIFTY50,
         category="data",
     )
     return {
