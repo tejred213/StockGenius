@@ -216,21 +216,29 @@ def get_chart_data(ticker: str, period: str = "1y"):
     import pandas as pd
     
     def _fetch():
+        import math
         df = yf.Ticker(normalized, session=_session).history(period=period)
         if df.empty: return []
-        
+
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-            
+
+        # Drop rows with any missing OHLC values — these break JSON serialization
+        # (yfinance occasionally returns NaN for suspended/holiday/corp-action days).
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
         records = []
         for index, row in df.iterrows():
-            date_str = index.strftime("%Y-%m-%d")
+            o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
+            # Final safety check — skip any row that still contains NaN or Inf
+            if not all(math.isfinite(v) for v in (o, h, l, c)):
+                continue
             records.append({
-                "time": date_str,
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
+                "time": index.strftime("%Y-%m-%d"),
+                "open": round(o, 2),
+                "high": round(h, 2),
+                "low": round(l, 2),
+                "close": round(c, 2),
             })
         return records
 
