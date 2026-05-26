@@ -198,10 +198,16 @@ def calculate_stoploss_targets(
     current_price: float
 ) -> dict | None:
     """
-    Calculates three stoploss/target scenarios based on S/R levels and prediction.
+    Calculates three stoploss/target scenarios using auto-adjusted S/R levels.
 
-    For Buy signals: SL at support, Target at resistance
-    For Sell signals: SL at resistance, Target at support
+    Levels are sorted by their position relative to the current price (not
+    by their static S1/R1 labels), so the stoploss is always at a real level
+    below the entry (Buy) / above the entry (Sell), and the target is always
+    at a real level on the profit side. This keeps risk-reward sensible even
+    when the price has already moved past one or more pivot levels.
+
+    For Buy signals: SL at supports below price, Target at resistances above
+    For Sell signals: SL at resistances above price, Target at supports below
     For Hold: Returns None
 
     Args:
@@ -210,40 +216,53 @@ def calculate_stoploss_targets(
         current_price: current LTP
 
     Returns:
-        dict with keys conservative, moderate, aggressive (each with stoploss, target, risk_reward_ratio)
-        or None if prediction is "Hold"
+        dict with keys conservative, moderate, aggressive (each with stoploss,
+        target, risk_reward_ratio) or None if prediction is "Hold".
     """
     if prediction == "Hold":
         return None
 
     is_buy = prediction in ["Buy", "Strong Buy"]
 
+    # Traditional support / resistance pools (no cross-over: SL stays a real
+    # support for Buy, real resistance for Sell). Sorted from nearest-to-price
+    # outwards so picks degrade gracefully when fewer than 3 levels qualify.
+    supports = sorted(
+        [sr_levels["s1"], sr_levels["s2"], sr_levels["s3"]], reverse=True
+    )  # [highest, mid, lowest]
+    resistances = sorted(
+        [sr_levels["r1"], sr_levels["r2"], sr_levels["r3"]]
+    )  # [lowest, mid, highest]
+
+    # Auto-adjust: keep only levels on the correct side of current price.
+    # Stoploss must be below entry (Buy) / above entry (Sell); target the inverse.
+    # If filtering empties a pool, fall back to the full list so we still emit
+    # numbers (the RR will simply look poor and the trader can judge the setup).
     if is_buy:
-        conservative = {
-            "stoploss": sr_levels["s1"],
-            "target": sr_levels["r1"],
-        }
-        moderate = {
-            "stoploss": sr_levels["s1"],
-            "target": sr_levels["r2"],
-        }
-        aggressive = {
-            "stoploss": sr_levels["s2"],
-            "target": sr_levels["r3"],
-        }
+        sl_pool = [s for s in supports if s < current_price] or supports
+        tgt_pool = [r for r in resistances if r > current_price] or resistances
     else:
-        conservative = {
-            "stoploss": sr_levels["r1"],
-            "target": sr_levels["s1"],
-        }
-        moderate = {
-            "stoploss": sr_levels["r1"],
-            "target": sr_levels["s2"],
-        }
-        aggressive = {
-            "stoploss": sr_levels["r2"],
-            "target": sr_levels["s3"],
-        }
+        sl_pool = [r for r in resistances if r > current_price] or resistances
+        tgt_pool = [s for s in supports if s < current_price] or supports
+
+    def _pick(levels: list, idx: int):
+        """Pick the idx-th level if available, else fall back to the last one."""
+        if not levels:
+            return None
+        return levels[min(idx, len(levels) - 1)]
+
+    conservative = {
+        "stoploss": _pick(sl_pool, 0),
+        "target": _pick(tgt_pool, 0),
+    }
+    moderate = {
+        "stoploss": _pick(sl_pool, 0),
+        "target": _pick(tgt_pool, 1),
+    }
+    aggressive = {
+        "stoploss": _pick(sl_pool, 1),
+        "target": _pick(tgt_pool, 2),
+    }
 
     def _calc_rr(sl, tgt, price):
         if price is None or sl is None or tgt is None:
