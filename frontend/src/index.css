@@ -199,3 +199,94 @@ table tbody tr:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* TradingView chart + indicator panel — responsive layout */
+.tv-chart-layout {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.tv-chart-area {
+  flex: 1;
+  height: 450px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
+}
+
+.tv-indicator-panel {
+  width: 130px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tv-indicator-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.tv-indicator-footnote {
+  margin-top: auto;
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+@media (max-width: 768px) {
+  .tv-chart-layout {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .tv-chart-area {
+    flex: 0 0 auto;
+    height: 360px;
+    width: 100%;
+  }
+
+  .tv-indicator-panel {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .tv-indicator-panel .tv-indicator-label {
+    flex: 0 0 auto;
+    margin-bottom: 0;
+  }
+
+  .tv-indicator-buttons {
+    flex: 1 1 auto;
+    flex-direction: row;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .tv-indicator-buttons > button {
+    flex: 1 1 0;
+    justify-content: center !important;
+    white-space: nowrap;
+    padding: 10px 8px !important;
+  }
+
+  .tv-indicator-footnote {
+    flex: 1 1 100%;
+    margin-top: 4px;
+    text-align: center;
+  }
+}
+

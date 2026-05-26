@@ -244,36 +244,15 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
   });
 
   return (
-    <div style={{ display: 'flex', gap: '12px', alignItems: 'stretch' }}>
-      <div
-        style={{
-          flex: 1,
-          height: '450px',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          border: '1px solid rgba(255,255,255,0.05)',
-          background: 'rgba(255,255,255,0.02)',
-          minWidth: 0,
-        }}
-      >
+    <div className="tv-chart-layout">
+      <div className="tv-chart-area">
         <div ref={chartContainerRef} style={{ height: '100%', width: '100%' }} />
       </div>
 
-      {/* Right-side indicator toggle panel */}
-      <div
-        style={{
-          width: '130px',
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          padding: '12px',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.05)',
-          background: 'rgba(255,255,255,0.02)',
-        }}
-      >
+      {/* Indicator toggle panel — vertical column on desktop, horizontal row on mobile */}
+      <div className="tv-indicator-panel">
         <div
+          className="tv-indicator-label"
           style={{
             fontSize: '10px',
             color: 'var(--text-secondary)',
@@ -286,56 +265,48 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
           Indicators
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowRsi7(v => !v)}
-          style={toggleBtnStyle(showRsi7, RSI7_COLOR)}
-          title="Toggle RSI 7 — short-term momentum (more sensitive)"
-        >
-          <span
-            style={{
-              display: 'inline-block',
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: RSI7_COLOR,
-              boxShadow: showRsi7 ? `0 0 8px ${RSI7_COLOR}` : 'none',
-            }}
-          />
-          RSI 7
-        </button>
+        <div className="tv-indicator-buttons">
+          <button
+            type="button"
+            onClick={() => setShowRsi7(v => !v)}
+            style={toggleBtnStyle(showRsi7, RSI7_COLOR)}
+            title="Toggle RSI 7 — short-term momentum (more sensitive)"
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: RSI7_COLOR,
+                boxShadow: showRsi7 ? `0 0 8px ${RSI7_COLOR}` : 'none',
+              }}
+            />
+            RSI 7
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setShowRsi14(v => !v)}
-          style={toggleBtnStyle(showRsi14, RSI14_COLOR)}
-          title="Toggle RSI 14 — standard 14-period Relative Strength Index"
-        >
-          <span
-            style={{
-              display: 'inline-block',
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: RSI14_COLOR,
-              boxShadow: showRsi14 ? `0 0 8px ${RSI14_COLOR}` : 'none',
-            }}
-          />
-          RSI 14
-        </button>
+          <button
+            type="button"
+            onClick={() => setShowRsi14(v => !v)}
+            style={toggleBtnStyle(showRsi14, RSI14_COLOR)}
+            title="Toggle RSI 14 — standard 14-period Relative Strength Index"
+          >
+            <span
+              style={{
+                display: 'inline-block',
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                background: RSI14_COLOR,
+                boxShadow: showRsi14 ? `0 0 8px ${RSI14_COLOR}` : 'none',
+              }}
+            />
+            RSI 14
+          </button>
+        </div>
 
-        <div
-          style={{
-            marginTop: 'auto',
-            fontSize: '10px',
-            color: 'var(--text-secondary)',
-            lineHeight: 1.5,
-            opacity: 0.7,
-          }}
-        >
-          Dashed lines mark<br />
-          overbought (70) /<br />
-          oversold (30)
+        <div className="tv-indicator-footnote">
+          Dashed lines mark overbought (70) / oversold (30)
         </div>
       </div>
     </div>
