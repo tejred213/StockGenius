@@ -217,6 +217,7 @@ def get_chart_data(ticker: str, period: str = "1y"):
     
     def _fetch():
         import math
+        from indicators import _compute_rsi
         df = yf.Ticker(normalized, session=_session).history(period=period)
         if df.empty: return []
 
@@ -227,10 +228,19 @@ def get_chart_data(ticker: str, period: str = "1y"):
         # (yfinance occasionally returns NaN for suspended/holiday/corp-action days).
         df = df.dropna(subset=["Open", "High", "Low", "Close"])
 
+        # Compute RSI 7 and RSI 14 on Close prices.
+        # First (period) rows will be NaN — emitted as null so the frontend skips them.
+        df["RSI_7"] = _compute_rsi(df["Close"], period=7)
+        df["RSI_14"] = _compute_rsi(df["Close"], period=14)
+
+        def _safe(v):
+            v = float(v)
+            return round(v, 2) if math.isfinite(v) else None
+
         records = []
         for index, row in df.iterrows():
             o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
-            # Final safety check — skip any row that still contains NaN or Inf
+            # Final safety check — skip any row that still contains NaN or Inf in OHLC
             if not all(math.isfinite(v) for v in (o, h, l, c)):
                 continue
             records.append({
@@ -239,6 +249,8 @@ def get_chart_data(ticker: str, period: str = "1y"):
                 "high": round(h, 2),
                 "low": round(l, 2),
                 "close": round(c, 2),
+                "rsi_7": _safe(row["RSI_7"]),
+                "rsi_14": _safe(row["RSI_14"]),
             })
         return records
 
