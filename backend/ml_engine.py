@@ -18,7 +18,12 @@ import yfinance as yf
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 
-from indicators import compute_all_indicators, get_feature_columns
+from indicators import (
+    compute_all_indicators,
+    get_feature_columns,
+    calculate_support_resistance,
+    calculate_stoploss_targets,
+)
 from cache_manager import CacheManager, TTL_PRICES, TTL_MODEL
 
 logger = logging.getLogger(__name__)
@@ -202,6 +207,14 @@ class StockMLEngine:
             "OBV": int(latest["OBV"]),
         }
 
+        # Calculate support/resistance levels (pivot-based)
+        support_resistance = calculate_support_resistance(latest)
+
+        # Calculate stoploss/target scenarios based on prediction
+        stoploss_targets = calculate_stoploss_targets(
+            support_resistance, action_pred, ltp
+        )
+
         return {
             "ticker": ticker,
             "ltp": ltp,
@@ -218,6 +231,8 @@ class StockMLEngine:
             "model_accuracy_cv": model_result["cv_accuracy"],
             "top_features": top_features,
             "technicals": technicals,
+            "support_resistance": support_resistance,
+            "stoploss_targets": stoploss_targets,
             "data_stale": price_result.get("stale", False),
         }
 

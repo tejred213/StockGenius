@@ -142,3 +142,125 @@ def _compute_obv(df: pd.DataFrame) -> pd.Series:
     direction = np.sign(df["Close"].diff())
     obv = (direction * df["Volume"]).fillna(0).cumsum()
     return obv
+
+
+# ======================================================================
+#  Support & Resistance Levels (Pivot Points)
+# ======================================================================
+
+def calculate_support_resistance(row: pd.Series) -> dict:
+    """
+    Calculates pivot-based support and resistance levels from latest OHLC.
+    Uses the standard pivot point methodology:
+    - Pivot = (High + Low + Close) / 3
+    - R1 = (2 * Pivot) - Low
+    - R2 = Pivot + (High - Low)
+    - R3 = High + 2 * (Pivot - Low)
+    - S1 = (2 * Pivot) - High
+    - S2 = Pivot - (High - Low)
+    - S3 = Low - 2 * (High - Pivot)
+
+    Args:
+        row: A pandas Series with 'High', 'Low', 'Close' keys
+
+    Returns:
+        dict with 7 keys: pivot, r1, r2, r3, s1, s2, s3 (all rounded to 2 decimals)
+    """
+    h = float(row.get("High", 0))
+    l = float(row.get("Low", 0))
+    c = float(row.get("Close", 0))
+
+    pivot = (h + l + c) / 3
+    hl_range = h - l
+
+    r1 = (2 * pivot) - l
+    r2 = pivot + hl_range
+    r3 = h + 2 * (pivot - l)
+
+    s1 = (2 * pivot) - h
+    s2 = pivot - hl_range
+    s3 = l - 2 * (h - pivot)
+
+    return {
+        "pivot": round(pivot, 2),
+        "r1": round(r1, 2),
+        "r2": round(r2, 2),
+        "r3": round(r3, 2),
+        "s1": round(s1, 2),
+        "s2": round(s2, 2),
+        "s3": round(s3, 2),
+    }
+
+
+def calculate_stoploss_targets(
+    sr_levels: dict,
+    prediction: str,
+    current_price: float
+) -> dict | None:
+    """
+    Calculates three stoploss/target scenarios based on S/R levels and prediction.
+
+    For Buy signals: SL at support, Target at resistance
+    For Sell signals: SL at resistance, Target at support
+    For Hold: Returns None
+
+    Args:
+        sr_levels: dict with keys pivot, r1, r2, r3, s1, s2, s3
+        prediction: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"
+        current_price: current LTP
+
+    Returns:
+        dict with keys conservative, moderate, aggressive (each with stoploss, target, risk_reward_ratio)
+        or None if prediction is "Hold"
+    """
+    if prediction == "Hold":
+        return None
+
+    is_buy = prediction in ["Buy", "Strong Buy"]
+
+    if is_buy:
+        conservative = {
+            "stoploss": sr_levels["s1"],
+            "target": sr_levels["r1"],
+        }
+        moderate = {
+            "stoploss": sr_levels["s1"],
+            "target": sr_levels["r2"],
+        }
+        aggressive = {
+            "stoploss": sr_levels["s2"],
+            "target": sr_levels["r3"],
+        }
+    else:
+        conservative = {
+            "stoploss": sr_levels["r1"],
+            "target": sr_levels["s1"],
+        }
+        moderate = {
+            "stoploss": sr_levels["r1"],
+            "target": sr_levels["s2"],
+        }
+        aggressive = {
+            "stoploss": sr_levels["r2"],
+            "target": sr_levels["s3"],
+        }
+
+    def _calc_rr(sl, tgt, price):
+        if price is None or sl is None or tgt is None:
+            return 0
+        sl_dist = abs(price - sl)
+        tgt_dist = abs(tgt - price)
+        if sl_dist < 1e-10:
+            return 0
+        return round(tgt_dist / sl_dist, 2)
+
+    for scenario in [conservative, moderate, aggressive]:
+        scenario["risk_reward_ratio"] = _calc_rr(
+            scenario["stoploss"], scenario["target"], current_price
+        )
+
+    return {
+        "conservative": conservative,
+        "moderate": moderate,
+        "aggressive": aggressive,
+    }

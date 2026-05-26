@@ -43,6 +43,11 @@ const getChangeIcon = (val) => {
   return <Minus size={16} />;
 };
 
+const calculateDistancePercent = (targetPrice, currentPrice) => {
+  if (!targetPrice || !currentPrice) return null;
+  return (((targetPrice - currentPrice) / currentPrice) * 100).toFixed(2);
+};
+
 export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [ticker, setTicker] = useState('');
@@ -51,6 +56,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [newsArticles, setNewsArticles] = useState([]);
   const [newsLoading, setNewsLoading] = useState(false);
+  const [selectedStrategy, setSelectedStrategy] = useState('moderate');
 
   const [livePriceData, setLivePriceData] = useState(null);
   const [priceFlash, setPriceFlash] = useState(null); // 'up' or 'down'
@@ -263,6 +269,135 @@ export default function Dashboard() {
                 {data.trade_strategy === 'Intraday Avoid' && 'Choppy conditions — no clear edge for short-term'}
               </div>
             </div>
+
+            {/* Support & Resistance Levels Card */}
+            {data.support_resistance && (
+              <div className="glass-panel" style={{ borderTop: '4px solid var(--accent-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
+                  <TrendingUp size={14} /> <span className="label">Support & Resistance</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '12px' }}>
+                  {[
+                    { label: 'Pivot', value: data.support_resistance.pivot, color: 'var(--accent-color)' },
+                    { label: 'R3', value: data.support_resistance.r3, color: 'var(--color-sell)', isResistance: true },
+                    { label: 'R2', value: data.support_resistance.r2, color: 'var(--color-sell)', isResistance: true },
+                    { label: 'R1', value: data.support_resistance.r1, color: 'var(--color-sell)', isResistance: true },
+                    { label: 'S1', value: data.support_resistance.s1, color: 'var(--color-buy)', isSupport: true },
+                    { label: 'S2', value: data.support_resistance.s2, color: 'var(--color-buy)', isSupport: true },
+                    { label: 'S3', value: data.support_resistance.s3, color: 'var(--color-buy)', isSupport: true },
+                  ].map((item) => (
+                    <div key={item.label} style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className="label" style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>{item.label}</div>
+                      <div style={{ fontSize: '14px', fontWeight: '700', color: item.color, marginBottom: '4px' }}>
+                        ₹{item.value?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      {livePriceData && (
+                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                          {calculateDistancePercent(item.value, livePriceData.ltp)}%
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* StopLoss & Target Strategy Selector Card */}
+            {data.stoploss_targets ? (
+              <div className="glass-panel" style={{ borderTop: `4px solid ${['Buy', 'Strong Buy'].includes(data.prediction) ? 'var(--color-buy)' : ['Sell', 'Strong Sell'].includes(data.prediction) ? 'var(--color-sell)' : 'var(--text-secondary)'}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
+                  <Zap size={14} /> <span className="label">StopLoss & Target</span>
+                </div>
+
+                {/* Strategy Selector Tabs */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                  {['conservative', 'moderate', 'aggressive'].map((strategy) => (
+                    <button
+                      key={strategy}
+                      onClick={() => setSelectedStrategy(strategy)}
+                      style={{
+                        padding: '10px',
+                        borderRadius: '8px',
+                        border: selectedStrategy === strategy ? '2px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.1)',
+                        background: selectedStrategy === strategy ? 'rgba(var(--accent-rgb), 0.1)' : 'rgba(255,255,255,0.03)',
+                        color: selectedStrategy === strategy ? 'var(--accent-color)' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: selectedStrategy === strategy ? '700' : '500',
+                        transition: 'all 0.2s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedStrategy !== strategy) {
+                          e.target.style.background = 'rgba(255,255,255,0.06)';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.15)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedStrategy !== strategy) {
+                          e.target.style.background = 'rgba(255,255,255,0.03)';
+                          e.target.style.borderColor = 'rgba(255,255,255,0.1)';
+                        }
+                      }}
+                    >
+                      {strategy.charAt(0).toUpperCase() + strategy.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Selected Strategy Details */}
+                {data.stoploss_targets[selectedStrategy] && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+                    <div style={{ padding: '14px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className="label" style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                        <ArrowDownRight size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                        StopLoss
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-sell)', marginBottom: '4px' }}>
+                        ₹{data.stoploss_targets[selectedStrategy].stoploss?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      {livePriceData && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {calculateDistancePercent(data.stoploss_targets[selectedStrategy].stoploss, livePriceData.ltp)}%
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ padding: '14px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div className="label" style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                        <ArrowUpRight size={12} style={{ display: 'inline', marginRight: '4px' }} />
+                        Target
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--color-buy)', marginBottom: '4px' }}>
+                        ₹{data.stoploss_targets[selectedStrategy].target?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      {livePriceData && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                          {calculateDistancePercent(data.stoploss_targets[selectedStrategy].target, livePriceData.ltp)}%
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ padding: '14px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', gridColumn: '1 / -1' }}>
+                      <div className="label" style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                        Risk-Reward Ratio
+                      </div>
+                      <div style={{ fontSize: '20px', fontWeight: '700', color: 'var(--accent-color)' }}>
+                        1 : {data.stoploss_targets[selectedStrategy].risk_reward_ratio}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="glass-panel" style={{ borderTop: '4px solid var(--text-secondary)', opacity: 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px' }}>
+                  <Zap size={14} /> <span className="label">StopLoss & Target</span>
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Not available for "Hold" signals
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Row 2: Live Chart */}
