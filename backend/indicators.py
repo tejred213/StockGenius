@@ -192,77 +192,200 @@ def calculate_support_resistance(row: pd.Series) -> dict:
     }
 
 
-def calculate_stoploss_targets(
-    sr_levels: dict,
-    prediction: str,
-    current_price: float
-) -> dict | None:
+# ======================================================================
+#  Classical Support & Resistance (swing-based, multi-timeframe)
+# ======================================================================
+
+def calculate_classical_sr(
+    df: pd.DataFrame,
+    current_price: float,
+    window: int = 5,
+    cluster_pct: float = 0.015,
+    max_levels: int = 4,
+) -> dict:
     """
-    Calculates three stoploss/target scenarios using auto-adjusted S/R levels.
+    Identify classical (chart-drawable) support and resistance levels from
+    swing highs and lows in the provided OHLC dataframe.
 
-    Levels are sorted by their position relative to the current price (not
-    by their static S1/R1 labels), so the stoploss is always at a real level
-    below the entry (Buy) / above the entry (Sell), and the target is always
-    at a real level on the profit side. This keeps risk-reward sensible even
-    when the price has already moved past one or more pivot levels.
+    Pipeline:
+      1. Detect fractal swing points — a bar's High is a swing high if it is
+         the max of the (2*window+1)-bar window centered on it (likewise for
+         Lows / swing lows).
+      2. Cluster nearby swings within `cluster_pct` of each other; each
+         cluster becomes one S/R level whose price is the average of its
+         member swings.
+      3. Rank clusters by touch count (desc) then recency (desc).
+      4. Split into resistances (above current price) and supports (below).
+      5. Return the top `max_levels` of each, sorted nearest→farthest.
 
-    For Buy signals: SL at supports below price, Target at resistances above
-    For Sell signals: SL at resistances above price, Target at supports below
-    For Hold: Returns None
+    The dataframe's interval (1H / 4H / Daily) is implicit — caller passes a
+    frame at the desired timeframe.
 
     Args:
-        sr_levels: dict with keys pivot, r1, r2, r3, s1, s2, s3
-        prediction: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"
+        df: OHLCV DataFrame with at least 'High' and 'Low' columns. Index
+            should be a DatetimeIndex for `last_touched` to be meaningful.
+        current_price: LTP, used to split levels into supports vs resistances.
+        window: Fractal lookaround (default 5 → 11-bar centered window).
+        cluster_pct: Levels closer than this fraction merge (default 1.5%).
+        max_levels: Cap on returned levels per side (default 4).
+
+    Returns:
+        {
+          "resistances": [{"price": float, "touches": int, "last_touched": "..."}],
+          "supports":    [{"price": float, "touches": int, "last_touched": "..."}],
+        }
+        Empty lists if insufficient data.
+    """
+    if df is None or df.empty or len(df) < (2 * window + 1):
+        return {"resistances": [], "supports": []}
+
+    highs = df["High"].values
+    lows = df["Low"].values
+    timestamps = df.index
+
+    # 1. Fractal swing detection (vectorized via rolling)
+    swing_highs = []  # list of (timestamp, price)
+    swing_lows = []
+    n = len(df)
+    for i in range(window, n - window):
+        wh = highs[i - window : i + window + 1]
+        wl = lows[i - window : i + window + 1]
+        if highs[i] == wh.max():
+            swing_highs.append((timestamps[i], float(highs[i])))
+        if lows[i] == wl.min():
+            swing_lows.append((timestamps[i], float(lows[i])))
+
+    def _cluster(swings: list) -> list:
+        """Merge swings within cluster_pct of each other into a single level.
+
+        Returns list of dicts: {price, touches, last_touched (datetime)}.
+        """
+        if not swings:
+            return []
+        # Sort by price ascending so contiguous-price members cluster naturally
+        swings_sorted = sorted(swings, key=lambda s: s[1])
+        clusters: list[list[tuple]] = [[swings_sorted[0]]]
+        for ts, px in swings_sorted[1:]:
+            ref_px = clusters[-1][-1][1]
+            if abs(px - ref_px) / max(ref_px, 1e-10) < cluster_pct:
+                clusters[-1].append((ts, px))
+            else:
+                clusters.append([(ts, px)])
+        out = []
+        for c in clusters:
+            avg_price = sum(p for _, p in c) / len(c)
+            touches = len(c)
+            last_touched = max(ts for ts, _ in c)
+            out.append(
+                {
+                    "price": round(avg_price, 2),
+                    "touches": touches,
+                    "last_touched": last_touched,
+                }
+            )
+        return out
+
+    resistance_clusters = _cluster(swing_highs)
+    support_clusters = _cluster(swing_lows)
+
+    # 2. Filter by side of current price
+    resistances = [c for c in resistance_clusters if c["price"] > current_price]
+    supports = [c for c in support_clusters if c["price"] < current_price]
+
+    # 3. Rank: touches desc, then recency desc. Take top N.
+    def _rank(levels: list) -> list:
+        return sorted(
+            levels,
+            key=lambda c: (-c["touches"], -c["last_touched"].timestamp()),
+        )[:max_levels]
+
+    top_resistances = _rank(resistances)
+    top_supports = _rank(supports)
+
+    # 4. Final display order: resistances nearest→farthest from price (ascending)
+    #    supports nearest→farthest from price (descending)
+    top_resistances.sort(key=lambda c: c["price"])
+    top_supports.sort(key=lambda c: -c["price"])
+
+    # 5. Serialize datetime → ISO date string for JSON safety
+    def _serialize(levels: list) -> list:
+        return [
+            {
+                "price": lv["price"],
+                "touches": lv["touches"],
+                "last_touched": lv["last_touched"].strftime("%Y-%m-%d"),
+            }
+            for lv in levels
+        ]
+
+    return {
+        "resistances": _serialize(top_resistances),
+        "supports": _serialize(top_supports),
+    }
+
+
+def calculate_stoploss_targets(
+    classical_sr: dict,
+    prediction: str,
+    current_price: float,
+) -> dict | None:
+    """
+    Compute three stoploss/target scenarios from classical S/R levels.
+
+    For Buy signals: SL at supports (below price), Target at resistances (above)
+    For Sell signals: SL at resistances (above price), Target at supports (below)
+    For Hold: Returns None
+
+    Strategy mapping (indices into the sorted level lists, nearest=index 0):
+      Conservative: SL=pool[0], Target=tgt[0]   — tightest stop, nearest target
+      Moderate:     SL=pool[0], Target=tgt[1]   — same stop, farther target
+      Aggressive:   SL=pool[1], Target=tgt[2]   — wider stop, farthest target
+
+    Falls back to the last available element when fewer than 3 levels exist.
+
+    Args:
+        classical_sr: dict with keys "resistances" and "supports", each a list
+            of {"price", "touches", "last_touched"} (output of
+            calculate_classical_sr).
+        prediction: "Strong Buy" | "Buy" | "Hold" | "Sell" | "Strong Sell"
         current_price: current LTP
 
     Returns:
-        dict with keys conservative, moderate, aggressive (each with stoploss,
-        target, risk_reward_ratio) or None if prediction is "Hold".
+        {
+          "conservative": {"stoploss": float, "target": float, "risk_reward_ratio": float},
+          "moderate":     {...},
+          "aggressive":   {...},
+        }
+        or None if prediction is "Hold" or the S/R lists are empty.
     """
     if prediction == "Hold":
         return None
 
+    resistances = [lv["price"] for lv in classical_sr.get("resistances", [])]
+    supports = [lv["price"] for lv in classical_sr.get("supports", [])]
+
+    if not resistances and not supports:
+        return None
+
     is_buy = prediction in ["Buy", "Strong Buy"]
 
-    # Traditional support / resistance pools (no cross-over: SL stays a real
-    # support for Buy, real resistance for Sell). Sorted from nearest-to-price
-    # outwards so picks degrade gracefully when fewer than 3 levels qualify.
-    supports = sorted(
-        [sr_levels["s1"], sr_levels["s2"], sr_levels["s3"]], reverse=True
-    )  # [highest, mid, lowest]
-    resistances = sorted(
-        [sr_levels["r1"], sr_levels["r2"], sr_levels["r3"]]
-    )  # [lowest, mid, highest]
-
-    # Auto-adjust: keep only levels on the correct side of current price.
-    # Stoploss must be below entry (Buy) / above entry (Sell); target the inverse.
-    # If filtering empties a pool, fall back to the full list so we still emit
-    # numbers (the RR will simply look poor and the trader can judge the setup).
+    # Resistances are sorted ascending (nearest above price first).
+    # Supports are sorted descending (nearest below price first).
     if is_buy:
-        sl_pool = [s for s in supports if s < current_price] or supports
-        tgt_pool = [r for r in resistances if r > current_price] or resistances
+        sl_pool = supports
+        tgt_pool = resistances
     else:
-        sl_pool = [r for r in resistances if r > current_price] or resistances
-        tgt_pool = [s for s in supports if s < current_price] or supports
+        sl_pool = resistances
+        tgt_pool = supports
 
     def _pick(levels: list, idx: int):
-        """Pick the idx-th level if available, else fall back to the last one."""
         if not levels:
             return None
         return levels[min(idx, len(levels) - 1)]
 
-    conservative = {
-        "stoploss": _pick(sl_pool, 0),
-        "target": _pick(tgt_pool, 0),
-    }
-    moderate = {
-        "stoploss": _pick(sl_pool, 0),
-        "target": _pick(tgt_pool, 1),
-    }
-    aggressive = {
-        "stoploss": _pick(sl_pool, 1),
-        "target": _pick(tgt_pool, 2),
-    }
+    conservative = {"stoploss": _pick(sl_pool, 0), "target": _pick(tgt_pool, 0)}
+    moderate = {"stoploss": _pick(sl_pool, 0), "target": _pick(tgt_pool, 1)}
+    aggressive = {"stoploss": _pick(sl_pool, 1), "target": _pick(tgt_pool, 2)}
 
     def _calc_rr(sl, tgt, price):
         if price is None or sl is None or tgt is None:
@@ -273,7 +396,7 @@ def calculate_stoploss_targets(
             return 0
         return round(tgt_dist / sl_dist, 2)
 
-    for scenario in [conservative, moderate, aggressive]:
+    for scenario in (conservative, moderate, aggressive):
         scenario["risk_reward_ratio"] = _calc_rr(
             scenario["stoploss"], scenario["target"], current_price
         )

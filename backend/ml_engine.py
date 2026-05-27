@@ -22,6 +22,7 @@ from indicators import (
     compute_all_indicators,
     get_feature_columns,
     calculate_support_resistance,
+    calculate_classical_sr,
     calculate_stoploss_targets,
 )
 from cache_manager import CacheManager, TTL_PRICES, TTL_MODEL
@@ -214,22 +215,32 @@ class StockMLEngine:
             "OBV": int(latest["OBV"]),
         }
 
-        # Calculate support/resistance levels (pivot-based).
-        # Textbook pivot points use the PRIOR session's complete OHLC to set
-        # today's levels. df_raw.iloc[-1] is today's bar (possibly partial
-        # during market hours) and df_raw.iloc[-2] is yesterday's complete
-        # bar. We pull from df_raw (not the labelled/dropna'd df) so the H/L
-        # are real session extremes rather than stale 5-day-old values.
+        # ── Pivot Points (secondary card) ──
+        # Textbook daily pivots use the PRIOR session's complete OHLC. df_raw
+        # is daily and sourced fresh; iloc[-2] is yesterday's complete bar.
         if len(df_raw) >= 2:
-            sr_source = df_raw.iloc[-2]
+            pivot_source = df_raw.iloc[-2]
         else:
-            sr_source = df_raw.iloc[-1]
-        support_resistance = calculate_support_resistance(sr_source)
+            pivot_source = df_raw.iloc[-1]
+        pivot_points = calculate_support_resistance(pivot_source)
 
-        # Calculate stoploss/target scenarios based on prediction
-        stoploss_targets = calculate_stoploss_targets(
-            support_resistance, action_pred, ltp
-        )
+        # ── Classical S/R across 1H / 4H / Daily ──
+        # 1H data: yfinance allows up to 730 days at 60m; 60 days is plenty
+        # for 5-bar fractals. Cached separately from daily data with shorter TTL.
+        df_1h = self._fetch_intraday(ticker, period="60d", interval="60m")
+        df_4h = self._resample_to_4h(df_1h) if df_1h is not None else None
+
+        support_resistance = {
+            "1h":    calculate_classical_sr(df_1h, ltp) if df_1h is not None else {"resistances": [], "supports": []},
+            "4h":    calculate_classical_sr(df_4h, ltp) if df_4h is not None else {"resistances": [], "supports": []},
+            "daily": calculate_classical_sr(df_raw, ltp),
+        }
+
+        # ── SL/Target for all three timeframes (frontend picks which to show) ──
+        stoploss_targets = {
+            tf: calculate_stoploss_targets(support_resistance[tf], action_pred, ltp)
+            for tf in ("1h", "4h", "daily")
+        }
 
         return {
             "ticker": ticker,
@@ -248,9 +259,64 @@ class StockMLEngine:
             "top_features": top_features,
             "technicals": technicals,
             "support_resistance": support_resistance,
+            "pivot_points": pivot_points,
             "stoploss_targets": stoploss_targets,
             "data_stale": price_result.get("stale", False),
         }
+
+    # ------------------------------------------------------------------
+    # Intraday data helpers (for multi-timeframe S/R)
+    # ------------------------------------------------------------------
+
+    def _fetch_intraday(self, ticker: str, period: str, interval: str):
+        """Fetch intraday OHLCV with caching. Returns None on failure or
+        when yfinance has no data for the interval (e.g. newly-listed stocks)."""
+        cache_key = f"{ticker}_prices_{interval}"
+
+        def _do_fetch():
+            df = yf.Ticker(ticker, session=_session).history(
+                period=period, interval=interval
+            )
+            if df is None or df.empty:
+                raise ValueError(f"No {interval} data for {ticker}")
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            return df
+
+        try:
+            # 30-minute TTL for intraday — swing-based S/R only shifts when
+            # new fractals form, so this is more than fresh enough.
+            res = CacheManager.get_or_fetch(
+                key=cache_key,
+                fetch_fn=_do_fetch,
+                ttl=30 * 60,
+                category="data",
+            )
+            return res.get("data")
+        except Exception as e:
+            logger.warning("Intraday fetch failed for %s @ %s: %s", ticker, interval, e)
+            return None
+
+    @staticmethod
+    def _resample_to_4h(df_1h: pd.DataFrame) -> pd.DataFrame | None:
+        """Derive 4H bars from 1H by resampling. Drops the final bar if it
+        spans fewer than 4 hours of trading (partial in-progress bar)."""
+        if df_1h is None or df_1h.empty:
+            return None
+        try:
+            df_4h = df_1h.resample("4H").agg(
+                {
+                    "Open": "first",
+                    "High": "max",
+                    "Low": "min",
+                    "Close": "last",
+                    "Volume": "sum",
+                }
+            ).dropna(subset=["Open", "High", "Low", "Close"])
+            return df_4h if not df_4h.empty else None
+        except Exception as e:
+            logger.warning("4H resample failed: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     # Model training & caching
