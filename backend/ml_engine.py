@@ -131,25 +131,32 @@ class StockMLEngine:
         df["Action_Label"] = df["Future_Return"].apply(
             lambda r: _encode_action_label(r) if pd.notna(r) else np.nan
         )
-        # Drop rows with NaN or infinity in any feature or label column
-        feature_cols = get_feature_columns()
-        required = feature_cols + ["Action_Label", "Future_Return"]
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
-        df.dropna(subset=required, inplace=True)
 
-        if len(df) < 100:
+        # Two filtered views of the same indicator frame:
+        # - df_train: rows that have a valid forward-looking label (drops last
+        #   ~5 rows where Future_Return is NaN) — used only for ML fitting/CV.
+        # - df_infer: rows with all features computed (label may be missing).
+        #   The newest row of this is "today" — what we should display and
+        #   what we should run inference on.
+        feature_cols = get_feature_columns()
+        df_train = df.dropna(subset=feature_cols + ["Action_Label", "Future_Return"])
+        df_infer = df.dropna(subset=feature_cols)
+
+        if len(df_train) < 100:
             return None
 
-        X = df[feature_cols].values
-        y_action = df["Action_Label"].values
+        X = df_train[feature_cols].values
+        y_action = df_train["Action_Label"].values
 
         # 4. Try to load cached model; otherwise train fresh
         model_result = self._get_or_train_models(
             ticker, X, y_action, feature_cols
         )
 
-        # 5. Inference on the latest data point
-        latest_row = df.iloc[-1:]
+        # 5. Inference on the latest data point (today's indicators, not the
+        #    5-day-stale tail of df_train)
+        latest_row = df_infer.iloc[-1:]
         X_latest = latest_row[feature_cols].values
 
         action_pred = self._ensemble_predict(
@@ -207,8 +214,17 @@ class StockMLEngine:
             "OBV": int(latest["OBV"]),
         }
 
-        # Calculate support/resistance levels (pivot-based)
-        support_resistance = calculate_support_resistance(latest)
+        # Calculate support/resistance levels (pivot-based).
+        # Textbook pivot points use the PRIOR session's complete OHLC to set
+        # today's levels. df_raw.iloc[-1] is today's bar (possibly partial
+        # during market hours) and df_raw.iloc[-2] is yesterday's complete
+        # bar. We pull from df_raw (not the labelled/dropna'd df) so the H/L
+        # are real session extremes rather than stale 5-day-old values.
+        if len(df_raw) >= 2:
+            sr_source = df_raw.iloc[-2]
+        else:
+            sr_source = df_raw.iloc[-1]
+        support_resistance = calculate_support_resistance(sr_source)
 
         # Calculate stoploss/target scenarios based on prediction
         stoploss_targets = calculate_stoploss_targets(
