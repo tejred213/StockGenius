@@ -1,221 +1,230 @@
+/* ======================================================================
+   StockGenius — "Trading Cafe · Light Roast" design system
+   Warm parchment palette · Bricolage Grotesque / Inter / JetBrains Mono
+   ====================================================================== */
 :root {
-  --bg-dark: #09090b;
-  --bg-card: rgba(24, 24, 27, 0.6);
-  --bg-card-hover: rgba(39, 39, 42, 0.8);
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --accent-color: #3b82f6;
-  --accent-hover: #2563eb;
-  
-  --color-buy: #10b981;
-  --color-sell: #ef4444;
-  --color-hold: #eab308;
+  /* fonts */
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* surfaces */
+  --bg: #fbf9f1;                 /* parchment page background */
+  --surface: #ffffff;            /* card / container-lowest */
+  --surface-low: #f6f4ec;        /* cream — inset tiles */
+  --surface-container: #f0eee6;  /* segmented control track */
+  --surface-high: #eae8e0;       /* high tint */
+
+  /* ink */
+  --text-primary: #1b1c17;       /* on-surface */
+  --text-secondary: #655d5a;     /* latte */
+  --text-faint: #827472;         /* outline */
+
+  /* structure */
+  --border: #e0d8d2;             /* hairline */
+  --border-strong: #d3c3c0;
+  --espresso: #271310;           /* primary ink / stamp */
+  --espresso-soft: #3e2723;
+  --tape: #ece0dc;               /* secondary-container — chips */
+
+  /* brand accent — espresso for "selected/ink", earth for warm pops */
+  --accent-color: #271310;
+  --accent-hover: #3e2723;
+  --accent-warm: #a8402a;
+
+  /* trade indicators (muted, organic) */
+  --color-buy: #586b4d;          /* sage */
+  --color-sell: #a8402a;         /* earth red */
+  --color-hold: #9a6b1e;         /* amber */
+  --buy-bg: rgba(88, 107, 77, 0.10);
+  --sell-bg: rgba(168, 64, 42, 0.09);
+  --hold-bg: rgba(154, 107, 30, 0.10);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-dark);
+  font-family: var(--font-body);
+  background-color: var(--bg);
   color: var(--text-primary);
-  background-image: 
-    radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
-    radial-gradient(at 50% 0%, hsla(225,39%,30%,0.1) 0, transparent 50%), 
-    radial-gradient(at 100% 0%, hsla(339,49%,30%,0.1) 0, transparent 50%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
   min-height: 100vh;
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  line-height: 1.55;
 }
 
-/* Glassmorphism Utilities */
-.glass-panel {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
-  padding: 24px;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-}
+/* tabular numerals for financial data */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
-.glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.1);
-  transform: translateY(-2px);
-}
-
+/* ---------- Layout ---------- */
 .container {
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 28px 64px 80px;
+}
+@media (max-width: 768px) {
+  .container { padding: 20px 16px 56px; }
 }
 
-/* Typography */
-.title {
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 8px;
-  letter-spacing: -0.02em;
+/* ---------- Card (was glass-panel) ---------- */
+.glass-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
+.glass-panel:hover { border-color: var(--border-strong); }
+
+/* ---------- Typography ---------- */
+.title {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 600;
+  line-height: 1.06;
+  margin-bottom: 10px;
+  letter-spacing: -0.025em;
+  color: var(--espresso);
+}
+@media (max-width: 768px) { .title { font-size: 30px; } }
 
 .subtitle {
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: 17px;
   margin-bottom: 24px;
 }
 
-/* Form Elements */
+/* small mono caps label */
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.section-heading {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- Form ---------- */
 .input-field {
   width: 100%;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--espresso);
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-family: var(--font-mono);
   margin-top: 8px;
   transition: all 0.2s ease;
 }
-
+.input-field::placeholder { color: var(--text-faint); font-family: var(--font-body); }
 .input-field:focus {
   outline: none;
-  border-color: var(--accent-color);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--espresso);
+  background: var(--surface);
 }
 
-.label {
-  font-size: 14px;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-/* Buttons */
+/* ---------- Buttons ---------- */
+/* primary = "stamp": espresso fill, cream text, hard offset shadow that sinks on hover */
 .btn-primary {
-  background: var(--accent-color);
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
+  background: var(--espresso);
+  color: #f3f1e9;
+  border: 1.5px solid var(--espresso);
+  padding: 13px 22px;
+  border-radius: 10px;
+  font-family: var(--font-body);
   font-weight: 600;
+  font-size: 15px;
   cursor: pointer;
-  transition: all 0.2s ease;
   width: 100%;
+  box-shadow: 3px 3px 0 var(--espresso-soft);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s ease;
 }
-
-.btn-primary:hover {
-  background: var(--accent-hover);
-  transform: translateY(-1px);
-}
+.btn-primary:hover { transform: translate(1.5px, 1.5px); box-shadow: 1.5px 1.5px 0 var(--espresso-soft); background: var(--accent-hover); }
+.btn-primary:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--espresso-soft); }
+.btn-primary:disabled { opacity: 0.55; cursor: default; box-shadow: 3px 3px 0 var(--espresso-soft); transform: none; }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 12px 24px;
-  border-radius: 8px;
+  background: transparent;
+  color: var(--espresso);
+  border: 1.5px solid var(--border-strong);
+  padding: 12px 22px;
+  border-radius: 10px;
   font-weight: 600;
+  font-size: 15px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease;
 }
+.btn-secondary:hover { background: var(--surface-low); }
 
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* Navigation */
+/* ---------- Navigation ---------- */
 .navbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 0;
-  margin-bottom: 40px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 22px 0;
+  margin-bottom: 48px;
+  border-bottom: 1px solid var(--border);
 }
-
-.nav-links {
-  display: flex;
-  gap: 24px;
-}
-
+.nav-links { display: flex; gap: 28px; align-items: center; }
 .nav-link {
   color: var(--text-secondary);
   text-decoration: none;
   font-weight: 500;
+  font-size: 14.5px;
+  padding-bottom: 3px;
   transition: color 0.2s;
 }
-
-.nav-link:hover, .nav-link.active {
-  color: var(--text-primary);
-}
+.nav-link:hover { color: var(--espresso); }
+.nav-link.active { color: var(--espresso); border-bottom: 2px solid var(--accent-warm); }
 
 .logo {
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-weight: 600;
   font-size: 20px;
-  color: white;
+  letter-spacing: -0.01em;
+  color: var(--espresso);
   text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* Section headings inside glass panels */
-.section-heading {
-  font-size: 15px;
-  color: var(--text-secondary);
-  font-weight: 600;
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* ---------- Live price flash ---------- */
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+.flash-up { background-color: var(--buy-bg) !important; }
+.flash-down { background-color: var(--sell-bg) !important; }
 
-/* Live Price Flash Animations */
-@keyframes blink {
-  0% { opacity: 1; }
-  50% { opacity: 0.3; }
-  100% { opacity: 1; }
-}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.flash-up {
-  background-color: rgba(16, 185, 129, 0.2) !important;
-}
+/* ---------- Tables ---------- */
+table tbody tr:hover { background: var(--surface-low); }
 
-.flash-down {
-  background-color: rgba(239, 68, 68, 0.2) !important;
-}
-
-/* Spinner for loading states */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Table row hover */
-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-/* TradingView chart + indicator panel — responsive layout */
-.tv-chart-layout {
-  display: flex;
-  gap: 12px;
-  align-items: stretch;
-}
-
+/* ---------- TradingView chart + indicator panel ---------- */
+.tv-chart-layout { display: flex; gap: 12px; align-items: stretch; }
 .tv-chart-area {
   flex: 1;
   height: 450px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  background: var(--surface-low);
   min-width: 0;
 }
-
 .tv-indicator-panel {
   width: 130px;
   flex-shrink: 0;
@@ -224,37 +233,21 @@ table tbody tr:hover {
   gap: 8px;
   padding: 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  background: var(--surface-low);
 }
-
-.tv-indicator-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-}
-
+.tv-indicator-buttons { display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .tv-indicator-footnote {
   margin-top: auto;
   font-size: 10px;
   color: var(--text-secondary);
   line-height: 1.5;
-  opacity: 0.7;
+  font-family: var(--font-mono);
 }
 
 @media (max-width: 768px) {
-  .tv-chart-layout {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .tv-chart-area {
-    flex: 0 0 auto;
-    height: 360px;
-    width: 100%;
-  }
-
+  .tv-chart-layout { flex-direction: column; gap: 10px; }
+  .tv-chart-area { flex: 0 0 auto; height: 360px; width: 100%; }
   .tv-indicator-panel {
     width: 100%;
     flex-direction: row;
@@ -263,30 +256,8 @@ table tbody tr:hover {
     gap: 10px;
     padding: 10px 12px;
   }
-
-  .tv-indicator-panel .tv-indicator-label {
-    flex: 0 0 auto;
-    margin-bottom: 0;
-  }
-
-  .tv-indicator-buttons {
-    flex: 1 1 auto;
-    flex-direction: row;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .tv-indicator-buttons > button {
-    flex: 1 1 0;
-    justify-content: center !important;
-    white-space: nowrap;
-    padding: 10px 8px !important;
-  }
-
-  .tv-indicator-footnote {
-    flex: 1 1 100%;
-    margin-top: 4px;
-    text-align: center;
-  }
+  .tv-indicator-panel .tv-indicator-label { flex: 0 0 auto; margin-bottom: 0; }
+  .tv-indicator-buttons { flex: 1 1 auto; flex-direction: row; gap: 8px; min-width: 0; }
+  .tv-indicator-buttons > button { flex: 1 1 0; justify-content: center !important; white-space: nowrap; padding: 10px 8px !important; }
+  .tv-indicator-footnote { flex: 1 1 100%; margin-top: 4px; text-align: center; }
 }
-

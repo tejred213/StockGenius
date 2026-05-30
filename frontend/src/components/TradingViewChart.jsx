@@ -2,8 +2,11 @@ import { useEffect, useRef, memo, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, LineSeries, LineStyle } from 'lightweight-charts';
 import axios from 'axios';
 
-const RSI7_COLOR = '#10b981';   // emerald
-const RSI14_COLOR = '#f59e0b';  // amber
+const RSI7_COLOR = '#b7791f';   // amber (secondary line)
+const RSI14_COLOR = '#3e2723';  // espresso (standard line)
+const SAGE = '#586b4d';         // bull
+const EARTH = '#a8402a';        // bear
+const ESPRESSO = '#271310';     // ink — wicks & outlines
 
 function TradingViewChart({ symbol, backendTicker, livePrice }) {
   const chartContainerRef = useRef(null);
@@ -24,18 +27,18 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#d1d4dc',
+        textColor: '#504442',
       },
       grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        vertLines: { color: 'rgba(39, 19, 16, 0.06)' },
+        horzLines: { color: 'rgba(39, 19, 16, 0.06)' },
       },
       timeScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(39, 19, 16, 0.12)',
         barSpacing: 10,
       },
       rightPriceScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(39, 19, 16, 0.12)',
       },
       crosshair: {
         mode: 0, // Normal mode
@@ -47,11 +50,13 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
 
     // --- Pane 0: candles ---
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10b981',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#10b981',
-      wickDownColor: '#ef4444',
+      upColor: SAGE,
+      downColor: EARTH,
+      borderVisible: true,
+      borderUpColor: ESPRESSO,
+      borderDownColor: ESPRESSO,
+      wickUpColor: ESPRESSO,
+      wickDownColor: ESPRESSO,
     });
     candlestickSeriesRef.current = candlestickSeries;
 
@@ -87,7 +92,7 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
     // Overbought / oversold reference lines (always shown when RSI pane is visible)
     rsi14Series.createPriceLine({
       price: 70,
-      color: 'rgba(239, 68, 68, 0.45)',
+      color: 'rgba(168, 64, 42, 0.5)',
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: true,
@@ -95,7 +100,7 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
     });
     rsi14Series.createPriceLine({
       price: 30,
-      color: 'rgba(16, 185, 129, 0.45)',
+      color: 'rgba(88, 107, 77, 0.5)',
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: true,
@@ -232,8 +237,8 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
     gap: '8px',
     padding: '10px 12px',
     borderRadius: '10px',
-    border: `1px solid ${active ? accent : 'rgba(255,255,255,0.08)'}`,
-    background: active ? `${accent}1f` : 'rgba(255,255,255,0.03)',
+    border: `1px solid ${active ? accent : 'var(--border)'}`,
+    background: active ? `${accent}1f` : 'var(--surface)',
     color: active ? accent : 'var(--text-secondary)',
     cursor: 'pointer',
     fontWeight: 600,
