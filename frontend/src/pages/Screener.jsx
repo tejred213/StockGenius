@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { TrendingUp, Zap, BarChart2, BarChart3, ArrowUpRight, ArrowDownRight, Minus, Loader, Trophy, Target, Brain } from 'lucide-react';
+import { Zap, BarChart2, BarChart3, Loader, Trophy, Brain } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+const MONO = "'JetBrains Mono', monospace";
 
 const TABS = [
   { id: 'momentum', label: 'Momentum', icon: <Zap size={16} /> },
@@ -13,18 +15,12 @@ const TABS = [
 ];
 
 const UNIVERSE_STYLES = {
-  'Nifty 50': { bg: 'rgba(59,130,246,0.15)',  color: '#60a5fa' },
-  'Mid Cap':  { bg: 'rgba(16,185,129,0.15)',  color: '#34d399' },
-  'Small Cap':{ bg: 'rgba(139,92,246,0.15)',  color: '#a78bfa' },
+  'Nifty 50': { bg: 'rgba(101,93,90,0.14)', color: 'var(--espresso)' },
+  'Mid Cap':  { bg: 'var(--buy-bg)', color: 'var(--color-buy)' },
+  'Small Cap':{ bg: 'var(--hold-bg)', color: 'var(--color-hold)' },
 };
 
-const getUniverseStyle = (u) => UNIVERSE_STYLES[u] || { bg: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' };
-
-const getChangeIcon = (val) => {
-  if (val > 0) return <ArrowUpRight size={14} />;
-  if (val < 0) return <ArrowDownRight size={14} />;
-  return <Minus size={14} />;
-};
+const getUniverseStyle = (u) => UNIVERSE_STYLES[u] || { bg: 'var(--surface-high)', color: 'var(--text-secondary)' };
 
 const getMomentumColor = (score) => {
   if (score >= 70) return 'var(--color-buy)';
@@ -32,42 +28,68 @@ const getMomentumColor = (score) => {
   return 'var(--color-sell)';
 };
 
+const thStyle = (h) => ({
+  padding: '12px 10px',
+  textAlign: h === 'Stock' ? 'left' : 'center',
+  color: 'var(--text-secondary)',
+  fontFamily: MONO,
+  fontWeight: 500,
+  fontSize: '11px',
+  textTransform: 'uppercase',
+  letterSpacing: '0.08em',
+});
+
+const chipStyle = (u) => ({
+  display: 'inline-block',
+  whiteSpace: 'nowrap',
+  fontFamily: MONO,
+  fontSize: '11px',
+  padding: '3px 9px',
+  borderRadius: '6px',
+  background: getUniverseStyle(u).bg,
+  color: getUniverseStyle(u).color,
+});
+
+function MomentumBar({ score }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+      <div style={{ width: '60px', height: '6px', borderRadius: '4px', background: 'var(--surface-container)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${score}%`, borderRadius: '4px', background: getMomentumColor(score), transition: 'width 0.6s ease' }} />
+      </div>
+      <span className="mono" style={{ fontWeight: 700, color: getMomentumColor(score), minWidth: '36px' }}>{score}</span>
+    </div>
+  );
+}
+
 function MomentumTable({ stocks, onTickerClick }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
             {['#', 'Stock', 'Sector', 'Universe', 'Price', 'RSI', 'MACD Hist', 'ADX', 'Momentum'].map(h => (
-              <th key={h} style={{ padding: '12px 10px', textAlign: h === 'Stock' ? 'left' : 'center', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+              <th key={h} style={thStyle(h)}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {stocks.map((s) => (
-            <tr key={s.ticker} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }} onClick={() => onTickerClick(s.ticker)}>
-              <td style={{ padding: '12px 10px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.rank}</td>
+            <tr key={s.ticker} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => onTickerClick(s.ticker)}>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.rank}</td>
               <td style={{ padding: '12px 10px' }}>
-                <div style={{ fontWeight: 600 }}>{s.name}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.ticker.replace('.NS', '')}</div>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.name}</div>
+                <div className="mono" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.ticker.replace('.NS', '')}</div>
               </td>
               <td style={{ padding: '12px 10px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>{s.sector}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '12px', background: getUniverseStyle(s.universe).bg, color: getUniverseStyle(s.universe).color }}>
-                  {s.universe}
-                </span>
+                <span style={chipStyle(s.universe)}>{s.universe}</span>
               </td>
-              <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 600 }}>₹{s.current_price?.toLocaleString('en-IN')}</td>
-              <td style={{ padding: '12px 10px', textAlign: 'center', color: s.rsi > 70 ? 'var(--color-sell)' : s.rsi < 30 ? 'var(--color-buy)' : 'white' }}>{s.rsi}</td>
-              <td style={{ padding: '12px 10px', textAlign: 'center', color: s.macd_histogram > 0 ? 'var(--color-buy)' : 'var(--color-sell)' }}>{s.macd_histogram?.toFixed(2)}</td>
-              <td style={{ padding: '12px 10px', textAlign: 'center' }}>{s.adx}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 600, color: 'var(--espresso)' }}>₹{s.current_price?.toLocaleString('en-IN')}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: s.rsi > 70 ? 'var(--color-sell)' : s.rsi < 30 ? 'var(--color-buy)' : 'var(--espresso)' }}>{s.rsi}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: s.macd_histogram > 0 ? 'var(--color-buy)' : 'var(--color-sell)' }}>{s.macd_histogram?.toFixed(2)}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: 'var(--espresso)' }}>{s.adx}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <div style={{ width: '60px', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${s.momentum_score}%`, borderRadius: '3px', background: getMomentumColor(s.momentum_score), transition: 'width 0.6s ease' }} />
-                  </div>
-                  <span style={{ fontWeight: 700, color: getMomentumColor(s.momentum_score), minWidth: '36px' }}>{s.momentum_score}</span>
-                </div>
+                <MomentumBar score={s.momentum_score} />
               </td>
             </tr>
           ))}
@@ -82,39 +104,32 @@ function StrongBuyTable({ stocks, onTickerClick }) {
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <tr style={{ borderBottom: '1px solid var(--border)' }}>
             {['#', 'Stock', 'Sector', 'Universe', 'Price', 'Confidence', 'RSI', 'ADX', 'Momentum'].map(h => (
-              <th key={h} style={{ padding: '12px 10px', textAlign: h === 'Stock' ? 'left' : 'center', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+              <th key={h} style={thStyle(h)}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {stocks.map((s) => (
-            <tr key={s.ticker} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }} onClick={() => onTickerClick(s.ticker)}>
-              <td style={{ padding: '12px 10px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.rank}</td>
+            <tr key={s.ticker} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => onTickerClick(s.ticker)}>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 700 }}>{s.rank}</td>
               <td style={{ padding: '12px 10px' }}>
-                <div style={{ fontWeight: 600 }}>{s.name}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.ticker.replace('.NS', '')}</div>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.name}</div>
+                <div className="mono" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{s.ticker.replace('.NS', '')}</div>
               </td>
               <td style={{ padding: '12px 10px', textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>{s.sector}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '12px', background: getUniverseStyle(s.universe).bg, color: getUniverseStyle(s.universe).color }}>
-                  {s.universe}
-                </span>
+                <span style={chipStyle(s.universe)}>{s.universe}</span>
               </td>
-              <td style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 600 }}>₹{s.current_price?.toLocaleString('en-IN')}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', fontWeight: 600, color: 'var(--espresso)' }}>₹{s.current_price?.toLocaleString('en-IN')}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <span style={{ fontWeight: 700, color: 'var(--color-buy)' }}>{s.confidence}%</span>
+                <span className="mono" style={{ fontWeight: 700, color: 'var(--color-buy)' }}>{s.confidence}%</span>
               </td>
-              <td style={{ padding: '12px 10px', textAlign: 'center', color: s.rsi > 70 ? 'var(--color-sell)' : s.rsi < 30 ? 'var(--color-buy)' : 'white' }}>{s.rsi}</td>
-              <td style={{ padding: '12px 10px', textAlign: 'center' }}>{s.adx}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: s.rsi > 70 ? 'var(--color-sell)' : s.rsi < 30 ? 'var(--color-buy)' : 'var(--espresso)' }}>{s.rsi}</td>
+              <td className="mono" style={{ padding: '12px 10px', textAlign: 'center', color: 'var(--espresso)' }}>{s.adx}</td>
               <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <div style={{ width: '60px', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${s.momentum_score}%`, borderRadius: '3px', background: getMomentumColor(s.momentum_score), transition: 'width 0.6s ease' }} />
-                  </div>
-                  <span style={{ fontWeight: 700, color: getMomentumColor(s.momentum_score), minWidth: '36px' }}>{s.momentum_score}</span>
-                </div>
+                <MomentumBar score={s.momentum_score} />
               </td>
             </tr>
           ))}
@@ -177,29 +192,38 @@ export default function Screener() {
 
   return (
     <div>
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+      <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+        <span style={{ display: 'inline-block', fontFamily: MONO, fontSize: '12px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)', background: 'var(--tape)', padding: '5px 12px', borderRadius: '4px', border: '1px solid var(--border-strong)', transform: 'rotate(-1deg)', marginBottom: '18px' }}>
+          Today's Menu
+        </span>
         <h1 className="title">Stock Screener</h1>
-        <p className="subtitle">Discover top momentum stocks, strong buy signals, mid cap & small cap opportunities</p>
+        <p className="subtitle">Top momentum, strong-buy signals, mid &amp; small cap opportunities — freshly brewed.</p>
       </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', justifyContent: 'center', flexWrap: 'wrap' }}>
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '10px 20px', borderRadius: '10px', border: 'none',
-              cursor: 'pointer', fontWeight: 600, fontSize: '14px',
-              transition: 'all 0.2s ease',
-              background: activeTab === tab.id ? 'var(--accent-color)' : 'rgba(255,255,255,0.05)',
-              color: activeTab === tab.id ? 'white' : 'var(--text-secondary)',
-            }}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '10px 20px', borderRadius: '10px',
+                border: active ? '1.5px solid var(--espresso)' : '1.5px solid var(--border)',
+                cursor: 'pointer', fontWeight: 600, fontSize: '14px',
+                fontFamily: MONO,
+                transition: 'all 0.18s ease',
+                background: active ? 'var(--espresso)' : 'var(--surface)',
+                color: active ? '#f3f1e9' : 'var(--text-secondary)',
+                boxShadow: active ? '3px 3px 0 var(--espresso-soft)' : 'none',
+              }}
+            >
+              {tab.icon} {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Content */}
@@ -217,7 +241,7 @@ export default function Screener() {
 
         {!loading && !error && stocks && stocks.length > 0 && (
           <>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                 {activeTab === 'momentum' && <><Trophy size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />Top {stocks.length} momentum stocks across all universes</>}
                 {activeTab === 'strongbuy' && <><Brain size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />{stocks.length} stocks with ML "Strong Buy" signal</>}
