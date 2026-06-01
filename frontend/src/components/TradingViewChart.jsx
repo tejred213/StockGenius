@@ -2,11 +2,10 @@ import { useEffect, useRef, memo, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, LineSeries, LineStyle } from 'lightweight-charts';
 import axios from 'axios';
 
-const RSI7_COLOR = '#b7791f';   // amber (secondary line)
-const RSI14_COLOR = '#3e2723';  // espresso (standard line)
-const SAGE = '#586b4d';         // bull
-const EARTH = '#a8402a';        // bear
-const ESPRESSO = '#271310';     // ink — wicks & outlines
+const RSI7_COLOR = '#eab308';   // bright yellow (secondary line)
+const RSI14_COLOR = '#22c55e';  // bright green (standard line)
+const BULL = '#16a34a';         // bright green — up candle
+const BEAR = '#dc2626';         // bright red — down candle
 
 function TradingViewChart({ symbol, backendTicker, livePrice }) {
   const chartContainerRef = useRef(null);
@@ -50,13 +49,11 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
 
     // --- Pane 0: candles ---
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: SAGE,
-      downColor: EARTH,
-      borderVisible: true,
-      borderUpColor: ESPRESSO,
-      borderDownColor: ESPRESSO,
-      wickUpColor: ESPRESSO,
-      wickDownColor: ESPRESSO,
+      upColor: BULL,
+      downColor: BEAR,
+      borderVisible: false,
+      wickUpColor: BULL,
+      wickDownColor: BEAR,
     });
     candlestickSeriesRef.current = candlestickSeries;
 
