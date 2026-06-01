@@ -6,7 +6,8 @@
   /* fonts */
   --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* "data" font — Apple San Francisco (bold), tabular figures keep numbers aligned */
+  --font-mono: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
 
   /* surfaces */
   --bg: #fbf9f1;                 /* parchment page background */
@@ -54,8 +55,8 @@ body {
   line-height: 1.55;
 }
 
-/* tabular numerals for financial data */
-.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+/* financial data — Apple SF, bold, tabular numerals so columns line up */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: -0.01em; }
 
 /* ---------- Layout ---------- */
 .container {

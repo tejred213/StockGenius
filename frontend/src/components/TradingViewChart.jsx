@@ -27,6 +27,7 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#504442',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
       },
       grid: {
         vertLines: { color: 'rgba(39, 19, 16, 0.06)' },

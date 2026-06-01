@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Search, TrendingUp, BarChart2, Activity, Zap, Target, Brain, ArrowUpRight, ArrowDownRight, Minus, Newspaper, ExternalLink } from 'lucide-react';
 import TradingViewChart from '../components/TradingViewChart';
 
-const MONO = "'JetBrains Mono', monospace";
+const MONO = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif";
 const DISPLAY = "'Bricolage Grotesque', sans-serif";
 
 const getTradingViewSymbol = (ticker) => {

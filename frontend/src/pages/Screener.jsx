@@ -5,7 +5,7 @@ import { Zap, BarChart2, BarChart3, Loader, Trophy, Brain } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-const MONO = "'JetBrains Mono', monospace";
+const MONO = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif";
 
 const TABS = [
   { id: 'momentum', label: 'Momentum', icon: <Zap size={16} /> },
