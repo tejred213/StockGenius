@@ -6,6 +6,7 @@ No pickle / disk I/O — ideal for ephemeral hosting like Render.
 
 import time
 import logging
+from datetime import datetime, timedelta, time as dtime
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -15,8 +16,35 @@ TTL_MODEL = 24 * 3600        # 24 hours — trained models
 TTL_PRICES = 6 * 3600        # 6 hours  — stock price data
 TTL_OPTION_CHAIN = 2 * 3600  # 2 hours  — live option chain
 TTL_FNO_HIST = 24 * 3600     # 24 hours — historical F&O bhav copies
-TTL_NIFTY50 = 4 * 3600       # 4 hours  — Nifty 50 comparison
+TTL_NIFTY50 = 4 * 3600       # 4 hours  — Nifty 50 comparison (out-of-hours)
 TTL_DAILY = 24 * 3600        # 24 hours — reserved for daily-cadence data
+
+TTL_MOMENTUM_MARKET = 1 * 3600   # 1 hour — momentum lists during NSE hours
+
+# NSE regular session, IST (India observes no DST, so a fixed UTC+5:30
+# offset is exact year-round — no zoneinfo / tzdata dependency needed).
+_IST_OFFSET = timedelta(hours=5, minutes=30)
+_MARKET_OPEN = dtime(9, 15)
+_MARKET_CLOSE = dtime(15, 30)
+
+
+def is_market_open(now_utc: Optional[datetime] = None) -> bool:
+    """True during NSE regular trading hours (Mon-Fri, 09:15-15:30 IST)."""
+    now_ist = (now_utc or datetime.utcnow()) + _IST_OFFSET
+    if now_ist.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    return _MARKET_OPEN <= now_ist.time() <= _MARKET_CLOSE
+
+
+def momentum_ttl() -> int:
+    """
+    Cache TTL for momentum / leaderboard data.
+
+    During market hours the list refreshes hourly so it tracks the session.
+    Outside market hours the data is static (prices don't change), so we hold
+    it for the longer TTL_NIFTY50 window to avoid pointless re-fetches.
+    """
+    return TTL_MOMENTUM_MARKET if is_market_open() else TTL_NIFTY50
 
 
 class CacheEntry:

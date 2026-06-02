@@ -206,20 +206,47 @@ def get_live_price(ticker: str):
     }
 
 
+# Chart interval → (yfinance interval, history window, cache TTL seconds).
+# Windows are the deepest yfinance allows for each interval, capped at 1 year:
+#   1d/1h can reach a year; 5m caps at 60d, 1m at 7d (yfinance hard limits).
+# Intraday bars carry a UNIX-timestamp `time`; daily bars carry a date string.
+CHART_INTERVALS = {
+    "1d": {"yf_interval": "1d",  "period": "1y",  "ttl": 6 * 3600, "intraday": False},
+    "1h": {"yf_interval": "60m", "period": "1y",  "ttl": 1 * 3600, "intraday": True},
+    "5m": {"yf_interval": "5m",  "period": "60d", "ttl": 5 * 60,   "intraday": True},
+    "1m": {"yf_interval": "1m",  "period": "7d",  "ttl": 2 * 60,   "intraday": True},
+}
+
+
 @app.get("/api/stocks/chart/{ticker}")
-def get_chart_data(ticker: str, period: str = "1y"):
+def get_chart_data(ticker: str, interval: str = "1d"):
     """
-    Returns historical OHLCV data for lightweight-charts.
+    Returns historical OHLCV (+RSI 7/14) for lightweight-charts.
+
+    Query param `interval` ∈ {1d, 1h, 5m, 1m}. Each interval returns the
+    deepest history yfinance supports for it, capped at one year. Intraday
+    candles emit `time` as a UNIX timestamp (seconds); daily candles emit a
+    `YYYY-MM-DD` string — matching what lightweight-charts expects per mode.
     """
+    cfg = CHART_INTERVALS.get(interval)
+    if cfg is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid interval '{interval}'. Choose one of: {', '.join(CHART_INTERVALS)}.",
+        )
+
     normalized = normalize_ticker(ticker)
-    from cache_manager import CacheManager, TTL_PRICES
+    from cache_manager import CacheManager
     import pandas as pd
-    
+
     def _fetch():
         import math
         from indicators import _compute_rsi
-        df = yf.Ticker(normalized, session=_session).history(period=period)
-        if df.empty: return []
+        df = yf.Ticker(normalized, session=_session).history(
+            period=cfg["period"], interval=cfg["yf_interval"]
+        )
+        if df.empty:
+            return []
 
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -237,14 +264,17 @@ def get_chart_data(ticker: str, period: str = "1y"):
             v = float(v)
             return round(v, 2) if math.isfinite(v) else None
 
+        intraday = cfg["intraday"]
         records = []
         for index, row in df.iterrows():
             o, h, l, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
             # Final safety check — skip any row that still contains NaN or Inf in OHLC
             if not all(math.isfinite(v) for v in (o, h, l, c)):
                 continue
+            # Intraday → epoch seconds (UTC instant); daily → calendar date string.
+            t = int(index.timestamp()) if intraday else index.strftime("%Y-%m-%d")
             records.append({
-                "time": index.strftime("%Y-%m-%d"),
+                "time": t,
                 "open": round(o, 2),
                 "high": round(h, 2),
                 "low": round(l, 2),
@@ -255,9 +285,9 @@ def get_chart_data(ticker: str, period: str = "1y"):
         return records
 
     result = CacheManager.get_or_fetch(
-        key=f"{normalized}_chart_{period}",
+        key=f"{normalized}_chart_{interval}",
         fetch_fn=_fetch,
-        ttl=TTL_PRICES,
+        ttl=cfg["ttl"],
         category="data"
     )
     if not result["data"]:
@@ -394,12 +424,12 @@ def momentum_stocks(limit: int = 80):
     Cached for 4 hours, synced with the underlying nifty50/smallcap caches
     so the screener always reflects the freshest leaderboard data.
     """
-    from cache_manager import CacheManager, TTL_NIFTY50
+    from cache_manager import CacheManager, momentum_ttl
 
     result = CacheManager.get_or_fetch(
         key="momentum_combined",
         fetch_fn=_get_all_momentum_stocks,
-        ttl=TTL_NIFTY50,
+        ttl=momentum_ttl(),
         category="data",
     )
     data = result["data"][:limit]
@@ -455,7 +485,7 @@ def strong_buy_stocks():
     already-cached momentum data. Zero additional API calls or ML training.
     Cached for 4 hours, synced with the underlying momentum data.
     """
-    from cache_manager import CacheManager, TTL_NIFTY50
+    from cache_manager import CacheManager, momentum_ttl
 
     def _find_strong_buys():
         all_stocks = _get_all_momentum_stocks()
@@ -473,7 +503,7 @@ def strong_buy_stocks():
     result = CacheManager.get_or_fetch(
         key="strong_buys_combined",
         fetch_fn=_find_strong_buys,
-        ttl=TTL_NIFTY50,
+        ttl=momentum_ttl(),
         category="data",
     )
     return {

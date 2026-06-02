@@ -7,6 +7,15 @@ const RSI14_COLOR = '#22c55e';  // bright green (standard line)
 const BULL = '#16a34a';         // bright green — up candle
 const BEAR = '#dc2626';         // bright red — down candle
 
+// Chart timeframes — shortest → longest. Labels shown in the selector;
+// keys match the backend `interval` query param.
+const INTERVALS = [
+  { key: '1m', label: '1 min' },
+  { key: '5m', label: '5 mins' },
+  { key: '1h', label: '1 hour' },
+  { key: '1d', label: '1 day' },
+];
+
 function TradingViewChart({ symbol, backendTicker, livePrice }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -18,6 +27,9 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
   // RSI toggle state — RSI 14 on by default (the standard), RSI 7 off
   const [showRsi7, setShowRsi7] = useState(false);
   const [showRsi14, setShowRsi14] = useState(true);
+
+  // Chart timeframe — daily by default
+  const [timeframe, setTimeframe] = useState('1d');
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -123,11 +135,24 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
     };
     window.addEventListener('resize', handleResize);
 
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, [symbol]);
+
+  // Fetch + (re)load candle/RSI data whenever the symbol or interval changes.
+  // Runs against the series refs created by the effect above, so switching
+  // timeframe just replaces the data without tearing down the chart.
+  useEffect(() => {
     let isMounted = true;
 
+    const toSeconds = (t) => (typeof t === 'number' ? t : Date.parse(t) / 1000);
+
     const fetchData = async () => {
+      const candleSeries = candlestickSeriesRef.current;
+      if (!candleSeries) return;
       try {
-        // Evaluate the backend symbol accurately
         let fetchSymbol = backendTicker;
         if (!fetchSymbol) {
           fetchSymbol = symbol;
@@ -136,7 +161,7 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
         }
 
         const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
-        const response = await axios.get(`${API_URL}/api/stocks/chart/${fetchSymbol}`);
+        const response = await axios.get(`${API_URL}/api/stocks/chart/${fetchSymbol}?interval=${timeframe}`);
 
         const candleData = response.data.map(d => ({
           time: d.time,
@@ -163,15 +188,17 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
             uniqueData.push(item);
           }
         }
-        uniqueData.sort((a, b) => new Date(a.time) - new Date(b.time));
+        // Sort chronologically — `time` is a date string (daily) or epoch
+        // seconds (intraday); normalize both to seconds for comparison.
+        uniqueData.sort((a, b) => toSeconds(a.time) - toSeconds(b.time));
 
         if (!isMounted) return;
 
         currentDataRef.current = uniqueData;
-        candlestickSeries.setData(uniqueData);
-        rsi7Series.setData(rsi7Data);
-        rsi14Series.setData(rsi14Data);
-        chart.timeScale().fitContent();
+        candleSeries.setData(uniqueData);
+        rsi7SeriesRef.current?.setData(rsi7Data);
+        rsi14SeriesRef.current?.setData(rsi14Data);
+        chartRef.current?.timeScale().fitContent();
       } catch (err) {
         console.error("Failed to fetch historical chart data", err);
       }
@@ -179,12 +206,8 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
 
     fetchData();
 
-    return () => {
-      isMounted = false;
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
-    };
-  }, [symbol]);
+    return () => { isMounted = false; };
+  }, [symbol, timeframe, backendTicker]);
 
   // Toggle RSI series visibility without recreating the chart
   useEffect(() => {
@@ -247,10 +270,28 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
   });
 
   return (
-    <div className="tv-chart-layout">
-      <div className="tv-chart-area">
-        <div ref={chartContainerRef} style={{ height: '100%', width: '100%' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {/* Timeframe selector */}
+      <div className="tv-timeframe-bar">
+        {INTERVALS.map(({ key, label }) => {
+          const active = timeframe === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTimeframe(key)}
+              className={`tv-timeframe-btn${active ? ' active' : ''}`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
+
+      <div className="tv-chart-layout">
+        <div className="tv-chart-area">
+          <div ref={chartContainerRef} style={{ height: '100%', width: '100%' }} />
+        </div>
 
       {/* Indicator toggle panel — vertical column on desktop, horizontal row on mobile */}
       <div className="tv-indicator-panel">
@@ -311,6 +352,7 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
         <div className="tv-indicator-footnote">
           Dashed lines mark overbought (70) / oversold (30)
         </div>
+      </div>
       </div>
     </div>
   );

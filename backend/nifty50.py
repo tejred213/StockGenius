@@ -13,7 +13,7 @@ import pandas as pd
 import yfinance as yf
 
 from indicators import compute_all_indicators
-from cache_manager import CacheManager, TTL_NIFTY50
+from cache_manager import CacheManager, momentum_ttl
 
 logger = logging.getLogger(__name__)
 
@@ -82,12 +82,12 @@ NIFTY50_TICKERS: list[dict[str, str]] = [
 def compare_nifty50() -> dict[str, Any]:
     """
     Batch-evaluate all Nifty 50 stocks and return a momentum leaderboard.
-    Results are cached for 4 hours (TTL_NIFTY50).
+    Cached hourly during NSE hours, 4 hours otherwise (see momentum_ttl).
     """
     result = CacheManager.get_or_fetch(
         key="nifty50_comparison",
         fetch_fn=_build_comparison,
-        ttl=TTL_NIFTY50,
+        ttl=momentum_ttl(),
         category="data",
     )
     return {

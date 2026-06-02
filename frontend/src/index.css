@@ -216,6 +216,30 @@ body {
 table tbody tr:hover { background: var(--surface-low); }
 
 /* ---------- TradingView chart + indicator panel ---------- */
+/* Timeframe selector — segmented control above the chart */
+.tv-timeframe-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tv-timeframe-btn {
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.tv-timeframe-btn:hover { border-color: var(--border-strong); color: var(--espresso); }
+.tv-timeframe-btn.active {
+  background: var(--espresso);
+  border-color: var(--espresso);
+  color: #f3f1e9;
+}
 .tv-chart-layout { display: flex; gap: 12px; align-items: stretch; }
 .tv-chart-area {
   flex: 1;

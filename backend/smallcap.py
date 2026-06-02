@@ -13,7 +13,7 @@ import pandas as pd
 import yfinance as yf
 
 from indicators import compute_all_indicators
-from cache_manager import CacheManager, TTL_NIFTY50
+from cache_manager import CacheManager, momentum_ttl
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def compare_smallcap() -> dict[str, Any]:
     result = CacheManager.get_or_fetch(
         key="smallcap_comparison",
         fetch_fn=_build_comparison,
-        ttl=TTL_NIFTY50,
+        ttl=momentum_ttl(),
         category="data",
     )
     return {
