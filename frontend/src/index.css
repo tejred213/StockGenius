@@ -216,12 +216,21 @@ body {
 table tbody tr:hover { background: var(--surface-low); }
 
 /* ---------- TradingView chart + indicator panel ---------- */
+/* Controls row — timeframe selector on the left, chart-type on the right */
+.tv-chart-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 /* Timeframe selector — segmented control above the chart */
 .tv-timeframe-bar {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
+.tv-indicator-buttons > button:disabled { pointer-events: none; }
 .tv-timeframe-btn {
   padding: 7px 16px;
   border-radius: 8px;

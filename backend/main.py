@@ -260,9 +260,23 @@ def get_chart_data(ticker: str, interval: str = "1d"):
         df["RSI_7"] = _compute_rsi(df["Close"], period=7)
         df["RSI_14"] = _compute_rsi(df["Close"], period=14)
 
+        # MACD (standard 12/26/9) on Close — mirrors indicators.compute_all_indicators.
+        # ewm(adjust=False) yields values from the first row (no NaN warm-up), so the
+        # early bars are just unstabilized rather than null.
+        ema12 = df["Close"].ewm(span=12, adjust=False).mean()
+        ema26 = df["Close"].ewm(span=26, adjust=False).mean()
+        df["MACD"] = ema12 - ema26
+        df["MACD_Signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+        df["MACD_Hist"] = df["MACD"] - df["MACD_Signal"]
+
         def _safe(v):
             v = float(v)
             return round(v, 2) if math.isfinite(v) else None
+
+        # MACD values can be tiny for low-priced small caps — keep more precision.
+        def _safe3(v):
+            v = float(v)
+            return round(v, 3) if math.isfinite(v) else None
 
         intraday = cfg["intraday"]
         records = []
@@ -281,6 +295,9 @@ def get_chart_data(ticker: str, interval: str = "1d"):
                 "close": round(c, 2),
                 "rsi_7": _safe(row["RSI_7"]),
                 "rsi_14": _safe(row["RSI_14"]),
+                "macd": _safe3(row["MACD"]),
+                "macd_signal": _safe3(row["MACD_Signal"]),
+                "macd_hist": _safe3(row["MACD_Hist"]),
             })
         return records
 
