@@ -1,0 +1,39 @@
+name: Deploy backend (Fly.io)
+
+# Deploys the FastAPI backend to Fly.io (app: stockgenius-api).
+#   - Auto:   pushes to main that touch backend/** (frontend-only changes are skipped).
+#   - Manual: the "Run workflow" button (workflow_dispatch).
+# Requires repo secret FLY_API_TOKEN — a Fly deploy token
+# (create with: flyctl tokens create deploy -a stockgenius-api).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+# Never run two backend deploys at once; let an in-flight deploy finish.
+concurrency:
+  group: fly-deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: flyctl deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # fly.toml + Dockerfile live in backend/. --remote-only builds on Fly's
+      # builders, so the runner needs no Docker. .dockerignore trims the context.
+      - name: Deploy to Fly.io
+        working-directory: backend
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
