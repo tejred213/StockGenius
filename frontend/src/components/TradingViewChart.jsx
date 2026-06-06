@@ -12,7 +12,9 @@ import axios from 'axios';
 const RSI7_COLOR = '#eab308';   // bright yellow (secondary line)
 const RSI14_COLOR = '#22c55e';  // bright green (standard line)
 const BULL = '#16a34a';         // bright green — up candle / up brick / +ve histogram
+const BULL_FADE = '#8bd1a5';    // soft green (50% tint of BULL) — +ve MACD bar, momentum waning
 const BEAR = '#dc2626';         // bright red — down candle / down brick / -ve histogram
+const BEAR_FADE = '#ee9393';    // soft pink (50% tint of BEAR) — -ve MACD bar, momentum waning
 const MACD_LINE = '#2563eb';    // blue — MACD line
 const MACD_SIGNAL = '#f97316';  // orange — signal line
 
@@ -413,11 +415,20 @@ function TradingViewChart({ symbol, backendTicker, livePrice }) {
       macdHistSeriesRef.current?.setData(
         rows
           .filter((d) => d.macd_hist != null)
-          .map((d) => ({
-            time: d.time,
-            value: d.macd_hist,
-            color: d.macd_hist >= 0 ? BULL : BEAR,
-          }))
+          .map((d, i, arr) => {
+            // 4-colour histogram (TradingView / broker convention): colour keys on
+            // both the sign of the bar AND whether it's moving away from zero vs the
+            // previous bar. Strong shade = momentum building; faded shade = momentum
+            // waning (an early heads-up, often a bar or two before a zero-line cross).
+            const up = d.macd_hist >= 0;
+            const prev = i > 0 ? arr[i - 1].macd_hist : null;
+            const strengthening =
+              prev == null ? true : up ? d.macd_hist >= prev : d.macd_hist <= prev;
+            const color = up
+              ? (strengthening ? BULL : BULL_FADE)
+              : (strengthening ? BEAR : BEAR_FADE);
+            return { time: d.time, value: d.macd_hist, color };
+          })
       );
       macdLineSeriesRef.current?.setData(
         rows.filter((d) => d.macd != null).map((d) => ({ time: d.time, value: d.macd }))
