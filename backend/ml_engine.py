@@ -363,12 +363,15 @@ class StockMLEngine:
             n_estimators=100,
             max_depth=8,
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
         )
 
         # Time-series cross-validation (5 folds)
+        # n_jobs=1 throughout: the host runs on a single shared vCPU, so joblib
+        # workers buy no parallelism while each one re-imports numpy/pandas/
+        # sklearn (~100MB apiece) and can OOM the machine.
         tscv = TimeSeriesSplit(n_splits=3)
-        cv_scores = cross_val_score(rf_action, X, y_action, cv=tscv, scoring="accuracy", n_jobs=-1)
+        cv_scores = cross_val_score(rf_action, X, y_action, cv=tscv, scoring="accuracy", n_jobs=1)
         cv_accuracy = round(float(cv_scores.mean()) * 100, 2)
 
         # Fit on full data

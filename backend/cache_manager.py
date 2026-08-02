@@ -6,6 +6,7 @@ No pickle / disk I/O — ideal for ephemeral hosting like Render.
 
 import time
 import logging
+from collections import OrderedDict
 from datetime import datetime, timedelta, time as dtime
 from typing import Any, Callable, Optional
 
@@ -57,8 +58,25 @@ class CacheEntry:
         self.created_at: float = time.time()
 
 
-# Single in-memory store shared across the process
-_store: dict[str, CacheEntry] = {}
+# Single in-memory store shared across the process, ordered least- to
+# most-recently-used so eviction can drop from the front.
+_store: "OrderedDict[str, CacheEntry]" = OrderedDict()
+
+# Per-category entry caps. TTL alone can't bound memory: a full trading day of
+# varied tickers would otherwise accumulate without limit. Trained ensembles run
+# ~5MB each and dominate the footprint, so models get the tighter cap.
+_MAX_ENTRIES = {"model": 60, "data": 250}
+_DEFAULT_MAX_ENTRIES = 250
+
+
+def _evict_if_needed(category: str) -> None:
+    """Drop least-recently-used entries until `category` is within its cap."""
+    prefix = f"{category}:"
+    limit = _MAX_ENTRIES.get(category, _DEFAULT_MAX_ENTRIES)
+    keys = [k for k in _store if k.startswith(prefix)]
+    for key in keys[: max(0, len(keys) - limit)]:
+        del _store[key]
+        logger.info("Cache EVICTED (%s at cap %d): %s", category, limit, key)
 
 
 class CacheManager:
@@ -97,6 +115,7 @@ class CacheManager:
 
         # 1. Fresh cache hit
         if entry is not None and (time.time() - entry.created_at) < ttl:
+            _store.move_to_end(cache_key)
             logger.debug("Cache HIT (fresh) for %s", key)
             return {"data": entry.data, "stale": False, "from_cache": True}
 
@@ -109,6 +128,8 @@ class CacheManager:
                 raise ValueError("Fetched DataFrame is empty, bypassing cache to force retry next time.")
 
             _store[cache_key] = CacheEntry(fresh_data)
+            _store.move_to_end(cache_key)
+            _evict_if_needed(category)
             logger.info("Cache REFRESHED for %s", key)
             return {"data": fresh_data, "stale": False, "from_cache": False}
         except Exception as exc:
