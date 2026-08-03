@@ -20,7 +20,8 @@ TTL_FNO_HIST = 24 * 3600     # 24 hours — historical F&O bhav copies
 TTL_NIFTY50 = 4 * 3600       # 4 hours  — Nifty 50 comparison (out-of-hours)
 TTL_DAILY = 24 * 3600        # 24 hours — reserved for daily-cadence data
 
-TTL_MOMENTUM_MARKET = 1 * 3600   # 1 hour — momentum lists during NSE hours
+TTL_MOMENTUM_MARKET = 15 * 60     # 15 min — momentum lists during NSE hours
+TTL_MOMENTUM_OFF_HOURS = 1 * 3600  # 1 hour — momentum lists outside NSE hours
 
 # NSE regular session, IST (India observes no DST, so a fixed UTC+5:30
 # offset is exact year-round — no zoneinfo / tzdata dependency needed).
@@ -41,11 +42,11 @@ def momentum_ttl() -> int:
     """
     Cache TTL for momentum / leaderboard data.
 
-    During market hours the list refreshes hourly so it tracks the session.
-    Outside market hours the data is static (prices don't change), so we hold
-    it for the longer TTL_NIFTY50 window to avoid pointless re-fetches.
+    During market hours the list refreshes every 15 minutes so it tracks the
+    session. Outside market hours the data is static (prices don't change),
+    so we hold it for an hour to avoid pointless re-fetches.
     """
-    return TTL_MOMENTUM_MARKET if is_market_open() else TTL_NIFTY50
+    return TTL_MOMENTUM_MARKET if is_market_open() else TTL_MOMENTUM_OFF_HOURS
 
 
 class CacheEntry:
