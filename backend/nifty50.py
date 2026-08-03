@@ -82,7 +82,7 @@ NIFTY50_TICKERS: list[dict[str, str]] = [
 def compare_nifty50() -> dict[str, Any]:
     """
     Batch-evaluate all Nifty 50 stocks and return a momentum leaderboard.
-    Cached hourly during NSE hours, 4 hours otherwise (see momentum_ttl).
+    Cached every 15 min during NSE hours, hourly otherwise (see momentum_ttl).
     """
     result = CacheManager.get_or_fetch(
         key="nifty50_comparison",
