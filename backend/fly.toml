@@ -4,6 +4,16 @@ primary_region = "bom"
 [build]
   dockerfile = "Dockerfile"
 
+[env]
+  ALERTS_DB_PATH = "/data/alerts.db"
+
+# Durable storage for alerts (the rest of the app is stateless / in-memory).
+# Create the volume once before first deploy:
+#   fly volumes create alerts_data -r bom -n 1
+[mounts]
+  source = "alerts_data"
+  destination = "/data"
+
 [http_service]
   internal_port = 8000
   force_https = true

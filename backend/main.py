@@ -34,6 +34,18 @@ app.add_middleware(
 # Shared ML engine instance
 ml_engine = StockMLEngine()
 
+# Alerts feature (price / signal → WhatsApp). Router is included after
+# normalize_ticker / get_live_price are defined below via lazy imports.
+from alerts import router as alerts_router
+import alerts_store
+
+app.include_router(alerts_router)
+
+
+@app.on_event("startup")
+def _init_alerts_db():
+    alerts_store.init_db()
+
 
 # ======================================================================
 # Ticker alias map — common names / abbreviations → actual NSE tickers
