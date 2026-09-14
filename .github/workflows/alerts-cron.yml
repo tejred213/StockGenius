@@ -1,0 +1,39 @@
+name: Check alerts (WhatsApp)
+
+# Periodically pokes the backend to evaluate price/signal alerts and deliver
+# WhatsApp messages for any that fire. The endpoint self-guards on NSE market
+# hours, so off-hours runs return immediately and cost almost nothing.
+#
+# Requires repo secret CRON_SECRET — must match the CRON_SECRET set on Fly
+# (fly secrets set CRON_SECRET=<value> -a stockgenius-api).
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub cron is best-effort and can lag a few minutes.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# Don't stack runs if one is slow.
+concurrency:
+  group: alerts-cron
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: POST /api/alerts/check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger alert check
+        run: |
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' \
+            -X POST 'https://stockgenius-api.fly.dev/api/alerts/check' \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP $code"
+          cat /tmp/body || true
+          echo
+          # Fail the run on server/auth errors so failures are visible.
+          if [ "$code" -ge 400 ]; then
+            echo "::error::alert check returned HTTP $code"
+            exit 1
+          fi

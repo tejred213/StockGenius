@@ -11,3 +11,4 @@ cache/
 .git
 .gitignore
 test_*.py
+*.db
