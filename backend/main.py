@@ -37,6 +37,7 @@ ml_engine = StockMLEngine()
 # Alerts feature (price / signal → WhatsApp). Router is included after
 # normalize_ticker / get_live_price are defined below via lazy imports.
 from alerts import router as alerts_router
+from alerts import start_scheduler as start_alert_scheduler, stop_scheduler as stop_alert_scheduler
 import alerts_store
 
 app.include_router(alerts_router)
@@ -45,6 +46,12 @@ app.include_router(alerts_router)
 @app.on_event("startup")
 def _init_alerts_db():
     alerts_store.init_db()
+    start_alert_scheduler()
+
+
+@app.on_event("shutdown")
+def _stop_alerts_scheduler():
+    stop_alert_scheduler()
 
 
 # ======================================================================
