@@ -6,6 +6,11 @@ alerts must survive restarts and deploys, so they live in a small SQLite file.
 On Fly.io this sits on a mounted volume (see ALERTS_DB_PATH / fly.toml); locally
 it falls back to a file next to the code.
 
+Alerts belong to a Telegram chat. A browser proves it owns that chat with a
+"link token": the Alerts page creates one, the user sends it to the bot via
+/start, and from then on the token acts as that browser's key to the chat's
+alerts.
+
 A fresh connection is opened per operation — volume is tiny and traffic is low,
 so this avoids any cross-thread sharing concerns with FastAPI's thread pool.
 """
@@ -13,6 +18,7 @@ so this avoids any cross-thread sharing concerns with FastAPI's thread pool.
 import os
 import time
 import uuid
+import secrets
 import sqlite3
 import logging
 from typing import Optional
@@ -24,6 +30,9 @@ DB_PATH = os.environ.get("ALERTS_DB_PATH", os.path.join(os.path.dirname(__file__
 VALID_TYPES = {"price_above", "price_below", "pct_move", "signal"}
 VALID_STATUSES = {"active", "triggered", "paused"}
 VALID_SIGNALS = {"Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"}
+
+# An unlinked token must be sent to the bot within this window.
+LINK_TOKEN_TTL = 60 * 60
 
 _initialised = False
 
@@ -46,11 +55,12 @@ def init_db() -> None:
             logger.warning("Could not create alerts DB dir %s: %s", parent, exc)
 
     with _connect() as conn:
+        _retire_whatsapp_table(conn)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS alerts (
                 id            TEXT PRIMARY KEY,
-                phone         TEXT NOT NULL,
+                chat_id       TEXT NOT NULL,
                 ticker        TEXT NOT NULL,
                 type          TEXT NOT NULL,
                 threshold     REAL,
@@ -64,10 +74,35 @@ def init_db() -> None:
             )
             """
         )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_phone  ON alerts(phone)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_chat   ON alerts(chat_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS telegram_links (
+                token      TEXT PRIMARY KEY,
+                chat_id    TEXT,
+                name       TEXT,
+                created_at REAL NOT NULL,
+                linked_at  REAL
+            )
+            """
+        )
     _initialised = True
     logger.info("Alerts DB ready at %s", DB_PATH)
+
+
+def _retire_whatsapp_table(conn: sqlite3.Connection) -> None:
+    """
+    Alerts used to be keyed by WhatsApp phone number. Those can't be delivered
+    over Telegram, so move the old table aside (kept, not dropped) and let a
+    fresh chat-keyed table be created.
+    """
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(alerts)")}
+    if "phone" in cols:
+        conn.execute("ALTER TABLE alerts RENAME TO alerts_whatsapp_legacy")
+        conn.execute("DROP INDEX IF EXISTS idx_alerts_phone")
+        conn.execute("DROP INDEX IF EXISTS idx_alerts_status")
+        logger.info("Moved WhatsApp-era alerts to alerts_whatsapp_legacy")
 
 
 def _ensure() -> None:
@@ -75,8 +110,64 @@ def _ensure() -> None:
         init_db()
 
 
+# ----------------------------------------------------------------------
+# Telegram link tokens
+# ----------------------------------------------------------------------
+def create_link_token() -> str:
+    _ensure()
+    token = secrets.token_urlsafe(24)  # 32 chars; fits Telegram's 64-char /start limit
+    now = time.time()
+    with _connect() as conn:
+        # Opportunistically clear abandoned, never-linked tokens.
+        conn.execute(
+            "DELETE FROM telegram_links WHERE chat_id IS NULL AND created_at < ?",
+            (now - LINK_TOKEN_TTL,),
+        )
+        conn.execute(
+            "INSERT INTO telegram_links (token, created_at) VALUES (?, ?)", (token, now)
+        )
+    return token
+
+
+def link_token(token: str, chat_id: str, name: Optional[str]) -> bool:
+    """Bind a pending token to a chat. False if unknown, expired or already used."""
+    _ensure()
+    now = time.time()
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE telegram_links SET chat_id = ?, name = ?, linked_at = ? "
+            "WHERE token = ? AND chat_id IS NULL AND created_at >= ?",
+            (chat_id, name, now, token, now - LINK_TOKEN_TTL),
+        )
+        if cur.rowcount > 0:
+            return True
+        # Telegram re-delivers updates after a restart — the same chat sending
+        # the same token again is still a success.
+        row = conn.execute(
+            "SELECT chat_id FROM telegram_links WHERE token = ?", (token,)
+        ).fetchone()
+        return bool(row and row["chat_id"] == chat_id)
+
+
+def get_link(token: str) -> Optional[dict]:
+    _ensure()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM telegram_links WHERE token = ?", (token,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def chat_for_token(token: str) -> Optional[str]:
+    link = get_link(token)
+    return link["chat_id"] if link else None
+
+
+# ----------------------------------------------------------------------
+# Alerts
+# ----------------------------------------------------------------------
 def create_alert(
-    phone: str,
+    chat_id: str,
     ticker: str,
     type_: str,
     threshold: Optional[float] = None,
@@ -87,7 +178,7 @@ def create_alert(
     alert_id = uuid.uuid4().hex
     row = {
         "id": alert_id,
-        "phone": phone,
+        "chat_id": chat_id,
         "ticker": ticker,
         "type": type_,
         "threshold": threshold,
@@ -103,10 +194,10 @@ def create_alert(
         conn.execute(
             """
             INSERT INTO alerts
-                (id, phone, ticker, type, threshold, target_signal,
+                (id, chat_id, ticker, type, threshold, target_signal,
                  status, note, created_at, last_checked, triggered_at, last_value)
             VALUES
-                (:id, :phone, :ticker, :type, :threshold, :target_signal,
+                (:id, :chat_id, :ticker, :type, :threshold, :target_signal,
                  :status, :note, :created_at, :last_checked, :triggered_at, :last_value)
             """,
             row,
@@ -114,12 +205,12 @@ def create_alert(
     return row
 
 
-def list_alerts(phone: Optional[str] = None) -> list[dict]:
+def list_alerts(chat_id: Optional[str] = None) -> list[dict]:
     _ensure()
     with _connect() as conn:
-        if phone:
+        if chat_id:
             cur = conn.execute(
-                "SELECT * FROM alerts WHERE phone = ? ORDER BY created_at DESC", (phone,)
+                "SELECT * FROM alerts WHERE chat_id = ? ORDER BY created_at DESC", (chat_id,)
             )
         else:
             cur = conn.execute("SELECT * FROM alerts ORDER BY created_at DESC")

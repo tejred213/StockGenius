@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
   Bell, BellRing, Plus, Trash2, Pause, Play, RefreshCw,
-  Loader, MessageCircle, Phone, Check,
+  Loader, Send, Check, ExternalLink,
 } from 'lucide-react';
 
 const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 const MONO = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif";
-const PHONE_KEY = 'sg_alert_phone';
+const KEY_STORAGE = 'sg_alert_tg_key';
+const LINK_POLL_MS = 2500;
+const LINK_POLL_LIMIT_MS = 10 * 60 * 1000;
 
 const SIGNALS = ['Strong Buy', 'Buy', 'Hold', 'Sell', 'Strong Sell'];
 
@@ -33,11 +35,20 @@ const describe = (a) => {
   return tk;
 };
 
-const isValidPhone = (v) => /^\+\d{8,15}$/.test(v.trim().replace(/\s/g, ''));
+const readKey = () => {
+  try { return localStorage.getItem(KEY_STORAGE) || ''; } catch { return ''; }
+};
+const writeKey = (v) => {
+  try { v ? localStorage.setItem(KEY_STORAGE, v) : localStorage.removeItem(KEY_STORAGE); } catch { /* storage blocked */ }
+};
 
 export default function Alerts() {
-  const [phone, setPhone] = useState(() => localStorage.getItem(PHONE_KEY) || '');
-  const [phoneInput, setPhoneInput] = useState('');
+  // `key` is the link token the bot accepted — it addresses this chat's alerts.
+  const [key, setKey] = useState(readKey);
+  const [chatName, setChatName] = useState('');
+  const [pendingLink, setPendingLink] = useState(null); // { token, url }
+  const [linking, setLinking] = useState(false);
+  const pollStart = useRef(0);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -53,45 +64,77 @@ export default function Alerts() {
 
   const activeType = ALERT_TYPES.find((t) => t.id === type);
 
+  const disconnect = useCallback(() => {
+    writeKey('');
+    setKey('');
+    setChatName('');
+    setAlerts([]);
+  }, []);
+
   const loadAlerts = useCallback(async () => {
-    if (!phone) return;
+    if (!key) return;
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/alerts`, { params: { phone } });
+      const res = await axios.get(`${API_URL}/api/alerts`, { params: { key } });
       setAlerts(res.data.alerts || []);
-    } catch {
-      setError('Could not load your alerts. The backend may be waking up — try again shortly.');
+      setChatName(res.data.name || '');
+    } catch (err) {
+      if (err?.response?.status === 401) {
+        disconnect();
+        setError('Your Telegram link is no longer valid — please connect again.');
+      } else {
+        setError('Could not load your alerts. The backend may be waking up — try again shortly.');
+      }
     } finally {
       setLoading(false);
     }
-  }, [phone]);
+  }, [key, disconnect]);
 
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
-  const savePhone = () => {
-    const clean = phoneInput.trim().replace(/\s/g, '');
-    if (!isValidPhone(clean)) {
-      setError('Enter your WhatsApp number in international format, e.g. +919876543210');
-      return;
-    }
-    localStorage.setItem(PHONE_KEY, clean);
-    setPhone(clean);
+  const startLink = async () => {
     setError('');
+    setLinking(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/alerts/telegram/link`);
+      pollStart.current = Date.now();
+      setPendingLink({ token: res.data.token, url: res.data.url });
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'Could not start Telegram linking. Try again shortly.');
+    } finally {
+      setLinking(false);
+    }
   };
 
-  const changeNumber = () => {
-    setPhoneInput(phone);
-    localStorage.removeItem(PHONE_KEY);
-    setPhone('');
-    setAlerts([]);
-  };
+  // While a link is pending, poll until the user taps Start in Telegram.
+  useEffect(() => {
+    if (!pendingLink) return undefined;
+    const id = setInterval(async () => {
+      if (Date.now() - pollStart.current > LINK_POLL_LIMIT_MS) {
+        setPendingLink(null);
+        setError('Linking timed out. Tap "Connect Telegram" to try again.');
+        return;
+      }
+      try {
+        const res = await axios.get(`${API_URL}/api/alerts/telegram/link/${pendingLink.token}`);
+        if (res.data.linked) {
+          writeKey(pendingLink.token);
+          setKey(pendingLink.token);
+          setChatName(res.data.name || '');
+          setPendingLink(null);
+        }
+      } catch { /* transient — keep polling */ }
+    }, LINK_POLL_MS);
+    return () => clearInterval(id);
+  }, [pendingLink]);
 
   const createAlert = async (e) => {
     e.preventDefault();
     setError('');
     if (!ticker.trim()) { setError('Enter a stock ticker or name.'); return; }
-    const body = { phone, ticker: ticker.trim(), type, note: note.trim() || undefined };
+    const body = { key, ticker: ticker.trim(), type, note: note.trim() || undefined };
     if (activeType.needs === 'threshold') {
       const num = parseFloat(threshold);
       if (!(num > 0)) { setError('Enter a positive value for the threshold.'); return; }
@@ -116,7 +159,7 @@ export default function Alerts() {
   const patchStatus = async (id, status) => {
     setBusyId(id);
     try {
-      await axios.patch(`${API_URL}/api/alerts/${id}`, { status });
+      await axios.patch(`${API_URL}/api/alerts/${id}`, { status }, { params: { key } });
       await loadAlerts();
     } catch { setError('Could not update the alert.'); }
     finally { setBusyId(null); }
@@ -125,62 +168,69 @@ export default function Alerts() {
   const removeAlert = async (id) => {
     setBusyId(id);
     try {
-      await axios.delete(`${API_URL}/api/alerts/${id}`);
+      await axios.delete(`${API_URL}/api/alerts/${id}`, { params: { key } });
       await loadAlerts();
     } catch { setError('Could not delete the alert.'); }
     finally { setBusyId(null); }
   };
 
-  // ---------------- Onboarding (no phone yet) ----------------
-  if (!phone) {
+  // ---------------- Onboarding (Telegram not linked yet) ----------------
+  if (!key) {
     return (
       <div style={{ maxWidth: '560px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <span style={badgeStyle}>WhatsApp Alerts</span>
+          <span style={badgeStyle}>Telegram Alerts</span>
           <h1 className="title">Never miss a move</h1>
-          <p className="subtitle">Get a WhatsApp ping when a stock hits your price or flips to a new ML signal.</p>
+          <p className="subtitle">Get a Telegram ping when a stock hits your price or flips to a new ML signal.</p>
         </div>
 
         <div className="glass-panel" style={{ padding: '28px' }}>
-          <div className="section-heading"><MessageCircle size={14} /> Connect WhatsApp</div>
+          <div className="section-heading"><Send size={14} /> Connect Telegram</div>
 
           <ol style={{ margin: '0 0 22px', paddingLeft: '20px', color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.7 }}>
-            <li>On WhatsApp, send <b style={{ color: 'var(--espresso)' }}>join &lt;your-sandbox-code&gt;</b> to the StockGenius sandbox number.</li>
-            <li>Enter the same phone number below (with country code).</li>
-            <li>Create alerts — we'll message you when they fire.</li>
+            <li>Tap <b style={{ color: 'var(--espresso)' }}>Connect Telegram</b> below.</li>
+            <li>Open the StockGenius bot and tap <b style={{ color: 'var(--espresso)' }}>Start</b>.</li>
+            <li>Come back here and create alerts — we'll message you when they fire.</li>
           </ol>
 
-          <label className="label" htmlFor="phone">Your WhatsApp number</label>
-          <input
-            id="phone"
-            className="input-field"
-            placeholder="+91 98765 43210"
-            value={phoneInput}
-            onChange={(e) => setPhoneInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && savePhone()}
-          />
+          {!pendingLink ? (
+            <button className="btn-primary" onClick={startLink} disabled={linking}>
+              {linking
+                ? <><Loader size={16} style={{ animation: 'spin 1s linear infinite', verticalAlign: 'middle', marginRight: '8px' }} />Preparing link…</>
+                : <><Send size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />Connect Telegram</>}
+            </button>
+          ) : (
+            <>
+              <a className="btn-primary" href={pendingLink.url} target="_blank" rel="noopener noreferrer"
+                 style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                <ExternalLink size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+                Open Telegram &amp; tap Start
+              </a>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '14px', textAlign: 'center' }}>
+                <Loader size={13} style={{ animation: 'spin 1s linear infinite', verticalAlign: 'middle', marginRight: '6px' }} />
+                Waiting for you to tap Start in Telegram…{' '}
+                <button onClick={() => setPendingLink(null)} style={linkBtnStyle}>cancel</button>
+              </p>
+            </>
+          )}
           {error && <p style={errorStyle}>{error}</p>}
-          <button className="btn-primary" style={{ marginTop: '18px' }} onClick={savePhone}>
-            <Phone size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
-            Continue
-          </button>
           <p style={{ fontSize: '12px', color: 'var(--text-faint)', marginTop: '14px', textAlign: 'center' }}>
-            Your number is stored only in this browser and used to address your alerts.
+            Free, no phone number needed. The link is remembered only in this browser.
           </p>
         </div>
       </div>
     );
   }
 
-  // ---------------- Main (phone set) ----------------
+  // ---------------- Main (Telegram linked) ----------------
   return (
     <div style={{ maxWidth: '760px', margin: '0 auto' }}>
       <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <span style={badgeStyle}>WhatsApp Alerts</span>
+        <span style={badgeStyle}>Telegram Alerts</span>
         <h1 className="title">Your Alerts</h1>
         <p className="subtitle">
-          Delivering to <b style={{ color: 'var(--espresso)' }}>{phone}</b>{' '}
-          <button onClick={changeNumber} style={linkBtnStyle}>change</button>
+          Delivering to Telegram{chatName ? <> (<b style={{ color: 'var(--espresso)' }}>{chatName}</b>)</> : ''}{' '}
+          <button onClick={disconnect} style={linkBtnStyle}>disconnect</button>
         </p>
       </div>
 
