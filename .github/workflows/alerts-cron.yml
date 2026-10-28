@@ -1,4 +1,4 @@
-name: Check alerts (WhatsApp)
+name: Check alerts (Telegram)
 
 # Backup only — the backend now checks alerts itself every couple of minutes
 # (see start_scheduler in backend/alerts.py), because GitHub's cron fires far

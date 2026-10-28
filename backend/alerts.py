@@ -1,18 +1,22 @@
 """
 Price & signal alerts API.
 
-Users create alerts keyed by their WhatsApp phone number (the phone *is* the
-identity — there is no login system). A background thread started with the app
-evaluates active alerts every couple of minutes during market hours and delivers
-WhatsApp messages for any that fire. `/api/alerts/check` runs the same check and
-is kept as a cron-driven backup.
+Alerts are delivered over Telegram. There is no login system: a browser links
+itself to a Telegram chat by sending the bot a one-time token (see
+alerts_store's link tokens), and that token is then the browser's `key` for
+every alerts call. A background thread started with the app evaluates active
+alerts every couple of minutes during market hours and messages the chat for
+any that fire. `/api/alerts/check` runs the same check and is kept as a
+cron-driven backup.
 
 Endpoints:
-    POST   /api/alerts            create
-    GET    /api/alerts?phone=…    list a phone's alerts
-    PATCH  /api/alerts/{id}       change status (pause / resume / re-arm)
-    DELETE /api/alerts/{id}       remove
-    POST   /api/alerts/check      cron-only backup; evaluate + notify
+    POST   /api/alerts/telegram/link          start linking; returns token + t.me URL
+    GET    /api/alerts/telegram/link/{token}  has the user tapped Start yet?
+    POST   /api/alerts                        create
+    GET    /api/alerts?key=…                  list the linked chat's alerts
+    PATCH  /api/alerts/{id}?key=…             change status (pause / resume / re-arm)
+    DELETE /api/alerts/{id}?key=…             remove
+    POST   /api/alerts/check                  cron-only backup; evaluate + notify
 """
 
 import os
@@ -26,7 +30,7 @@ from pydantic import BaseModel, field_validator
 
 import alerts_store as store
 from cache_manager import is_market_open
-from whatsapp import send_whatsapp
+import telegram
 
 logger = logging.getLogger(__name__)
 
@@ -37,20 +41,12 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 # Request models
 # ----------------------------------------------------------------------
 class AlertCreate(BaseModel):
-    phone: str
+    key: str
     ticker: str
     type: str
     threshold: Optional[float] = None
     target_signal: Optional[str] = None
     note: Optional[str] = None
-
-    @field_validator("phone")
-    @classmethod
-    def _validate_phone(cls, v: str) -> str:
-        v = v.strip().replace(" ", "")
-        if not v.startswith("+") or not v[1:].isdigit() or not (8 <= len(v[1:]) <= 15):
-            raise ValueError("phone must be E.164 format, e.g. +919876543210")
-        return v
 
     @field_validator("type")
     @classmethod
@@ -72,12 +68,65 @@ class AlertPatch(BaseModel):
 
 
 # ----------------------------------------------------------------------
+# Telegram linking
+# ----------------------------------------------------------------------
+@router.post("/telegram/link")
+def start_link():
+    if not telegram.is_configured():
+        raise HTTPException(503, "Telegram bot is not configured on the server")
+    bot = telegram.get_bot_username()
+    if not bot:
+        raise HTTPException(503, "Could not reach the Telegram bot — try again shortly")
+    token = store.create_link_token()
+    return {"token": token, "bot": bot, "url": f"https://t.me/{bot}?start={token}"}
+
+
+@router.get("/telegram/link/{token}")
+def link_status(token: str):
+    link = store.get_link(token)
+    if not link:
+        raise HTTPException(404, "unknown link token")
+    return {"linked": link["chat_id"] is not None, "name": link["name"]}
+
+
+def handle_start(chat_id: str, payload: str, name: str) -> str:
+    """Reply for a /start command sent to the bot (called by the telegram poller)."""
+    if not payload:
+        return (
+            "Hi! To get StockGenius alerts here, open the Alerts page on "
+            "StockGenius and tap \"Connect Telegram\"."
+        )
+    if store.link_token(payload, chat_id, name or None):
+        return "✅ Connected to StockGenius. Your alerts will be delivered to this chat."
+    return (
+        "That link has expired or was already used. Open the Alerts page on "
+        "StockGenius and tap \"Connect Telegram\" again."
+    )
+
+
+def _chat_for_key(key: str) -> str:
+    chat_id = store.chat_for_token(key)
+    if not chat_id:
+        raise HTTPException(401, "Telegram is not connected — link it from the Alerts page")
+    return chat_id
+
+
+def _owned_alert(alert_id: str, key: str) -> dict:
+    chat_id = _chat_for_key(key)
+    alert = store.get_alert(alert_id)
+    if not alert or alert["chat_id"] != chat_id:
+        raise HTTPException(404, "alert not found")
+    return alert
+
+
+# ----------------------------------------------------------------------
 # CRUD
 # ----------------------------------------------------------------------
 @router.post("")
 def create_alert(payload: AlertCreate):
     from main import normalize_ticker  # lazy import avoids circular import
 
+    chat_id = _chat_for_key(payload.key)
     ticker = normalize_ticker(payload.ticker)
 
     # Per-type field requirements
@@ -91,7 +140,7 @@ def create_alert(payload: AlertCreate):
             )
 
     alert = store.create_alert(
-        phone=payload.phone,
+        chat_id=chat_id,
         ticker=ticker,
         type_=payload.type,
         threshold=payload.threshold,
@@ -102,19 +151,24 @@ def create_alert(payload: AlertCreate):
 
 
 @router.get("")
-def list_alerts(phone: str = Query(..., description="E.164 phone the alerts belong to")):
-    return {"alerts": store.list_alerts(phone), "phone": phone}
+def list_alerts(key: str = Query(..., description="Link token from /telegram/link")):
+    link = store.get_link(key)
+    if not link or not link["chat_id"]:
+        raise HTTPException(401, "Telegram is not connected — link it from the Alerts page")
+    return {"alerts": store.list_alerts(link["chat_id"]), "name": link["name"]}
 
 
 @router.patch("/{alert_id}")
-def patch_alert(alert_id: str, payload: AlertPatch):
+def patch_alert(alert_id: str, payload: AlertPatch, key: str = Query(...)):
+    _owned_alert(alert_id, key)
     if not store.set_status(alert_id, payload.status):
         raise HTTPException(404, "alert not found")
     return store.get_alert(alert_id)
 
 
 @router.delete("/{alert_id}")
-def delete_alert(alert_id: str):
+def delete_alert(alert_id: str, key: str = Query(...)):
+    _owned_alert(alert_id, key)
     if not store.delete_alert(alert_id):
         raise HTTPException(404, "alert not found")
     return {"deleted": alert_id}
@@ -174,7 +228,7 @@ def _build_message(alert: dict, value_str: str) -> str:
 
 def run_check(include_signals: bool = True) -> dict:
     """
-    Evaluates active alerts and sends WhatsApp for any that fire.
+    Evaluates active alerts and sends a Telegram message for any that fire.
     Off-market-hours it returns early without any data fetching.
 
     Price alerts are cheap (one fast_info call per ticker); signal alerts run the
@@ -230,7 +284,7 @@ def _run_check_locked(include_signals: bool) -> dict:
             alert, price_cache.get(tk), signal_cache.get(tk)
         )
         if fired:
-            if send_whatsapp(alert["phone"], _build_message(alert, value_str)):
+            if telegram.send_message(alert["chat_id"], _build_message(alert, value_str)):
                 store.mark_triggered(alert["id"], value_str)
                 triggered += 1
             else:
@@ -238,7 +292,7 @@ def _run_check_locked(include_signals: bool) -> dict:
                 # silently consuming the one-shot alert.
                 store.mark_checked(alert["id"], value_str)
                 failed += 1
-                logger.warning("Alert %s fired but WhatsApp delivery failed", alert["id"])
+                logger.warning("Alert %s fired but Telegram delivery failed", alert["id"])
         else:
             store.mark_checked(alert["id"], value_str)
 
@@ -292,6 +346,8 @@ def _scheduler_loop() -> None:
 
 def start_scheduler() -> None:
     global _scheduler_thread
+    # Receive /start commands so browsers can link their Telegram chat.
+    telegram.start_polling(handle_start)
     if os.environ.get("ALERTS_SCHEDULER", "1") == "0":
         logger.info("Alert scheduler disabled via ALERTS_SCHEDULER=0")
         return
@@ -308,3 +364,4 @@ def start_scheduler() -> None:
 
 def stop_scheduler() -> None:
     _stop_event.set()
+    telegram.stop_polling()

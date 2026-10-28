@@ -34,7 +34,7 @@ app.add_middleware(
 # Shared ML engine instance
 ml_engine = StockMLEngine()
 
-# Alerts feature (price / signal → WhatsApp). Router is included after
+# Alerts feature (price / signal → Telegram). Router is included after
 # normalize_ticker / get_live_price are defined below via lazy imports.
 from alerts import router as alerts_router
 from alerts import start_scheduler as start_alert_scheduler, stop_scheduler as stop_alert_scheduler
