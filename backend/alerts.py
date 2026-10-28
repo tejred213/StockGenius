@@ -2,20 +2,23 @@
 Price & signal alerts API.
 
 Users create alerts keyed by their WhatsApp phone number (the phone *is* the
-identity — there is no login system). A GitHub Actions cron periodically POSTs to
-`/api/alerts/check`, which evaluates active alerts and delivers WhatsApp messages
-for any that fire.
+identity — there is no login system). A background thread started with the app
+evaluates active alerts every couple of minutes during market hours and delivers
+WhatsApp messages for any that fire. `/api/alerts/check` runs the same check and
+is kept as a cron-driven backup.
 
 Endpoints:
     POST   /api/alerts            create
     GET    /api/alerts?phone=…    list a phone's alerts
     PATCH  /api/alerts/{id}       change status (pause / resume / re-arm)
     DELETE /api/alerts/{id}       remove
-    POST   /api/alerts/check      cron-only; evaluate + notify
+    POST   /api/alerts/check      cron-only backup; evaluate + notify
 """
 
 import os
+import time
 import logging
+import threading
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Header
@@ -169,26 +172,31 @@ def _build_message(alert: dict, value_str: str) -> str:
     return "\n".join(lines)
 
 
-@router.post("/check")
-def check_alerts(x_cron_secret: Optional[str] = Header(default=None)):
+def run_check(include_signals: bool = True) -> dict:
     """
-    Cron-only. Evaluates active alerts and sends WhatsApp for any that fire.
-    Guarded by the X-Cron-Secret header matching the CRON_SECRET env var.
+    Evaluates active alerts and sends WhatsApp for any that fire.
     Off-market-hours it returns early without any data fetching.
-    """
-    expected = os.environ.get("CRON_SECRET")
-    if not expected:
-        raise HTTPException(503, "CRON_SECRET not configured on the server")
-    if x_cron_secret != expected:
-        raise HTTPException(401, "invalid cron secret")
 
+    Price alerts are cheap (one fast_info call per ticker); signal alerts run the
+    ML engine, which reuses cached models/daily prices, so the scheduler checks
+    them less often by passing include_signals=False on most ticks.
+    """
     if not is_market_open():
         return {"checked": 0, "triggered": 0, "skipped": "market_closed"}
 
+    # The in-process scheduler and the cron endpoint can overlap — serialise so
+    # an alert can't be evaluated (and messaged) twice at the same moment.
+    with _check_lock:
+        return _run_check_locked(include_signals)
+
+
+def _run_check_locked(include_signals: bool) -> dict:
     from main import get_live_price  # lazy import avoids circular import
     from main import ml_engine
 
     active = store.list_active_alerts()
+    if not include_signals:
+        active = [a for a in active if a["type"] != "signal"]
     if not active:
         return {"checked": 0, "triggered": 0, "skipped": 0}
 
@@ -215,19 +223,88 @@ def check_alerts(x_cron_secret: Optional[str] = Header(default=None)):
                 signal_cache[tk] = None
 
     triggered = 0
+    failed = 0
     for alert in active:
         tk = alert["ticker"]
         fired, value_str = _evaluate_condition(
             alert, price_cache.get(tk), signal_cache.get(tk)
         )
         if fired:
-            sent = send_whatsapp(alert["phone"], _build_message(alert, value_str))
-            store.mark_triggered(alert["id"], value_str)
-            if sent:
+            if send_whatsapp(alert["phone"], _build_message(alert, value_str)):
+                store.mark_triggered(alert["id"], value_str)
                 triggered += 1
             else:
+                # Leave it active so the next check retries delivery instead of
+                # silently consuming the one-shot alert.
+                store.mark_checked(alert["id"], value_str)
+                failed += 1
                 logger.warning("Alert %s fired but WhatsApp delivery failed", alert["id"])
         else:
             store.mark_checked(alert["id"], value_str)
 
-    return {"checked": len(active), "triggered": triggered, "skipped": 0}
+    return {"checked": len(active), "triggered": triggered, "failed": failed, "skipped": 0}
+
+
+@router.post("/check")
+def check_alerts(x_cron_secret: Optional[str] = Header(default=None)):
+    """
+    Cron-only backup to the in-process scheduler (see start_scheduler).
+    Guarded by the X-Cron-Secret header matching the CRON_SECRET env var.
+    """
+    expected = os.environ.get("CRON_SECRET")
+    if not expected:
+        raise HTTPException(503, "CRON_SECRET not configured on the server")
+    if x_cron_secret != expected:
+        raise HTTPException(401, "invalid cron secret")
+
+    return run_check()
+
+
+# ----------------------------------------------------------------------
+# In-process scheduler
+# ----------------------------------------------------------------------
+# GitHub Actions cron is far too unreliable to drive alerts on its own — in
+# practice "*/15" fires a handful of times a day, landing inside NSE hours about
+# once. The Fly machine is always on, so a background thread checks instead.
+PRICE_CHECK_INTERVAL = int(os.environ.get("ALERTS_CHECK_INTERVAL", "120"))
+SIGNAL_CHECK_INTERVAL = int(os.environ.get("ALERTS_SIGNAL_CHECK_INTERVAL", "900"))
+
+_check_lock = threading.Lock()
+_stop_event = threading.Event()
+_scheduler_thread: Optional[threading.Thread] = None
+
+
+def _scheduler_loop() -> None:
+    last_signal_check = 0.0
+    while not _stop_event.is_set():
+        try:
+            now = time.monotonic()
+            include_signals = now - last_signal_check >= SIGNAL_CHECK_INTERVAL
+            result = run_check(include_signals=include_signals)
+            if include_signals and result.get("skipped") != "market_closed":
+                last_signal_check = now
+            if result.get("triggered") or result.get("failed"):
+                logger.info("Alert scheduler: %s", result)
+        except Exception:
+            logger.exception("Alert scheduler tick failed")
+        _stop_event.wait(PRICE_CHECK_INTERVAL)
+
+
+def start_scheduler() -> None:
+    global _scheduler_thread
+    if os.environ.get("ALERTS_SCHEDULER", "1") == "0":
+        logger.info("Alert scheduler disabled via ALERTS_SCHEDULER=0")
+        return
+    if _scheduler_thread and _scheduler_thread.is_alive():
+        return
+    _stop_event.clear()
+    _scheduler_thread = threading.Thread(target=_scheduler_loop, name="alerts-scheduler", daemon=True)
+    _scheduler_thread.start()
+    logger.info(
+        "Alert scheduler started (price every %ss, signal every %ss)",
+        PRICE_CHECK_INTERVAL, SIGNAL_CHECK_INTERVAL,
+    )
+
+
+def stop_scheduler() -> None:
+    _stop_event.set()

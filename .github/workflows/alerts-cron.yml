@@ -1,7 +1,9 @@
 name: Check alerts (WhatsApp)
 
-# Periodically pokes the backend to evaluate price/signal alerts and deliver
-# WhatsApp messages for any that fire. The endpoint self-guards on NSE market
+# Backup only — the backend now checks alerts itself every couple of minutes
+# (see start_scheduler in backend/alerts.py), because GitHub's cron fires far
+# less often than scheduled. This still pokes /api/alerts/check in case the
+# in-process scheduler ever stalls. The endpoint self-guards on NSE market
 # hours, so off-hours runs return immediately and cost almost nothing.
 #
 # Requires repo secret CRON_SECRET — must match the CRON_SECRET set on Fly
